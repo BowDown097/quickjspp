@@ -376,7 +376,7 @@ namespace qjs
         static Range unwrap(JSContext* ctx, JSValueConst val)
         {
             int64_t length;
-            if (JS_GetLength(ctx, val, &length) != 0)
+            if (!JS_IsArray(val) || JS_GetLength(ctx, val, &length) != 0)
             {
                 JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", typeid(Range).name());
                 throw exception(ctx);
