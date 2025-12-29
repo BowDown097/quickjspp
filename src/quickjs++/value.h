@@ -21,7 +21,7 @@ namespace qjs
             T as() const { return unwrap_free<T>(ctx, property_traits<Key>::get(ctx, this_obj, key)); }
 
             /** Implicit converion to value. */
-            operator value() const; // defined later due to Value being incomplete at this point
+            operator value() const; // defined later due to ::value being incomplete at this point
 
             template<typename T> requires has_js_traits<std::decay_t<T>>
             property_proxy& operator=(T&& val)
@@ -46,10 +46,30 @@ namespace qjs
                 return *this;
             }
 
-            template<typename Key2> requires has_property_traits<std::decay_t<Key>>
+            template<typename Key2>
             property_proxy<Key2> operator[](Key2 key2) const
             {
                 return { ctx, std::move(key2), as<JSValue>() };
+            }
+
+            /** Forwarded value functions, where applicable. */
+            template<typename Key2, typename Value>
+            std::unordered_map<Key2, Value> properties() const
+            {
+                return as<value>().template properties<Key2, Value>();
+            }
+
+            std::string to_json() const { return as<value>().to_json(); }
+            std::string to_json(const value& replacer) const { return as<value>().to_json(replacer); }
+            std::string to_json(const value& replacer, const value& space) const { return as<value>().to_json(replacer, space); }
+
+            // defined later due to ::value being incomplete at this point
+            value eval_this(std::string_view buffer, const char* filename = "<evalThis>", int flags = 0) const;
+
+            template<typename F, typename... Args>
+            void invoke_then(F&& callback, Args&&... args) const
+            {
+                return as<value>().invoke_then(std::forward<F>(callback), std::forward<Args>(args)...);
             }
         };
 
@@ -62,12 +82,8 @@ namespace qjs
         struct get_set<M>
         {
             inline static constexpr bool is_const_v = std::is_const_v<R>;
-            static const R& get(const std::shared_ptr<T>& ptr) {
-                return *ptr.*M;
-            }
-            static R& set(std::shared_ptr<T> ptr, R&& value) {
-                return *ptr.*M = std::forward<R>(value);
-            }
+            static const R& get(const std::shared_ptr<T>& ptr) { return *ptr.*M; }
+            static R& set(std::shared_ptr<T> ptr, R&& value) { return *ptr.*M = std::forward<R>(value); }
         };
 
         // M - static member object
@@ -75,12 +91,8 @@ namespace qjs
         struct get_set<M>
         {
             inline static constexpr bool is_const_v = std::is_const_v<R>;
-            static const R& get(bool) {
-                return *M;
-            }
-            static R& set(bool, R&& value) {
-                return *M = std::forward<R>(value);
-            }
+            static const R& get(bool) { return *M; }
+            static R& set(bool, R&& value) { return *M = std::forward<R>(value); }
         };
 
         template<typename T>
@@ -99,8 +111,9 @@ namespace qjs
      *  Can be converted to C++ type, for example: auto string = value.as<std::string>(); qjs::exception would be thrown on error
      *  Properties can be accessed (read/write): value["property1"] = 1; value[2] = "2";
      */
-    struct value
+    class value
     {
+    public:
         JSContext* ctx;
         JSValue v;
 
@@ -232,7 +245,7 @@ namespace qjs
                 return add_getter_setter<GetSet::get, GetSet::set>(name);
         }
 
-        std::string to_json(const value& replacer = value(JS_UNDEFINED), const value& space = value(JS_UNDEFINED))
+        std::string to_json(const value& replacer = value(JS_UNDEFINED), const value& space = value(JS_UNDEFINED)) const
         {
             assert(ctx);
             assert(!replacer.ctx || ctx == replacer.ctx);
@@ -241,7 +254,7 @@ namespace qjs
         }
 
         /** Same as context::eval() but with this value as 'this'. */
-        value eval_this(std::string_view buffer, const char* filename = "<evalThis>", int flags = 0)
+        value eval_this(std::string_view buffer, const char* filename = "<evalThis>", int flags = 0) const
         {
             assert(buffer.data()[buffer.size()] == '\0' && "eval buffer is not null-terminated"); // JS_Eval requirement
             assert(ctx);
@@ -254,13 +267,28 @@ namespace qjs
          *  If the value is a Promise, it is awaited.
          *  Once the operation completes, the given callback is invoked with the result, if any.
          *
-         *  @tparam R The type passed to the callback. Use `void` (default) if the callback does not expect a result.
          *  @param callback Function to be called once the operation finishes with the result, if any.
          *  @param args Arguments to pass to the callable object (ignored for Promises).
          */
-        template<typename R = void, typename F, typename... Args>
+        template<typename F, typename... Args>
+        void invoke_then(F&& callback, Args&&... args) const
+        {
+            using Traits = function_traits<F>;
+            if constexpr (Traits::arity > 0)
+            {
+                return invoke_then_impl<typename Traits::template arg<0>>(
+                    std::forward<F>(callback), std::forward<Args>(args)...);
+            }
+            else
+            {
+                return invoke_then_impl<void>(
+                    std::forward<F>(callback), std::forward<Args>(args)...);
+            }
+        }
+    private:
+        template<typename R, typename F, typename... Args>
             requires std::is_void_v<R> || std::invocable<F, std::remove_reference_t<R>&&>
-        void invoke_then(F&& callback, Args&&... args)
+        void invoke_then_impl(F&& callback, Args&&... args) const
         {
             JSPromiseStateEnum promiseState = JS_PromiseState(ctx, v);
             if (promiseState == JS_PROMISE_PENDING)
@@ -298,7 +326,7 @@ namespace qjs
                 value fresult = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
                 if ((*this)["constructor"]["name"].as<std::string_view>() == "AsyncFunction")
                 {
-                    fresult.invoke_then<R>(std::forward<F>(callback));
+                    fresult.invoke_then(std::forward<F>(callback));
                 }
                 else
                 {
@@ -317,4 +345,10 @@ namespace qjs
 
     template<typename Key> requires has_property_traits<std::decay_t<Key>>
     detail::property_proxy<Key>::operator value() const { return as<value>(); }
+
+    template<typename Key> requires has_property_traits<std::decay_t<Key>>
+    value detail::property_proxy<Key>::eval_this(std::string_view buffer, const char* filename, int flags) const
+    {
+        return as<value>().eval_this(buffer, filename, flags);
+    }
 }

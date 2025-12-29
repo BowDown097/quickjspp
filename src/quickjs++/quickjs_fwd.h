@@ -28,7 +28,7 @@ namespace qjs
 class context;
 class module;
 class runtime;
-struct value;
+class value;
 
 template<typename T> requires std::is_class_v<T>
 class class_registrar;
