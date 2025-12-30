@@ -130,8 +130,12 @@ namespace qjs
         explicit value(JSValue&& val) noexcept
             : ctx(nullptr), v(std::move(val)) {}
 
-        value(JSContext* ctx, JSValue&& val) noexcept
-            : ctx(ctx), v(std::move(val)) {}
+        value(JSContext* ctx, JSValue&& val)
+            : ctx(ctx), v(std::move(val))
+        {
+            if (JS_IsException(v))
+                throw exception(ctx);
+        }
 
         value(const value& val) noexcept
         {
