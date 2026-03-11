@@ -5,6 +5,7 @@
 #include <ranges>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 
 namespace qjs
 {
@@ -197,9 +198,8 @@ namespace qjs
 #if defined(JS_NAN_BOXING) && JS_NAN_BOXING
         && (!std::same_as<Integer, uint64_t>)
 #endif
-    class js_traits<Integer>
+    struct js_traits<Integer>
     {
-    public:
         static Integer unwrap(JSContext* ctx, JSValueConst val)
         {
             if constexpr (sizeof(Integer) > sizeof(int32_t))
@@ -363,6 +363,178 @@ namespace qjs
             if (val)
                 return js_traits<std::decay_t<T>>::wrap(ctx, val.value());
             return JS_NULL;
+        }
+    };
+
+    /** Conversion traits for std::variant. */
+    template<typename... Ts>
+    struct js_traits<std::variant<Ts...>>
+    {
+        static std::variant<Ts...> unwrap(JSContext* ctx, JSValueConst val)
+        {
+            const auto tag = JS_VALUE_GET_TAG(val);
+            switch (tag)
+            {
+            case JS_TAG_STRING:
+                return unwrap_priority<is_string>(ctx, val);
+            case JS_TAG_FUNCTION_BYTECODE:
+                return unwrap_priority<std::is_function>(ctx, val);
+            case JS_TAG_OBJECT:
+                if (auto result = unwrap_obj<Ts...>(ctx, val, JS_GetClassID(val)))
+                    return result.value();
+                JS_ThrowTypeError(
+                    ctx, "Expected type %s, got object with classid %d",
+                    typeid(std::variant<Ts...>).name(), JS_GetClassID(val));
+                throw exception(ctx);
+            case JS_TAG_INT:
+            case JS_TAG_BIG_INT:
+                return unwrap_priority<std::is_arithmetic>(ctx, val);
+            case JS_TAG_BOOL:
+                return unwrap_priority<is_boolean, std::is_arithmetic>(ctx, val);
+            }
+
+            if (tag >= JS_TAG_FLOAT64) // any larger tag is FLOAT64 if JS_NAN_BOXING
+                return unwrap_priority<std::is_floating_point>(ctx, val);
+
+            JS_ThrowTypeError(ctx, "Expected type %s, got tag %d", typeid(std::variant<Ts...>).name(), tag);
+            throw exception(ctx);
+        }
+
+        static JSValue wrap(JSContext* ctx, std::variant<Ts...> val) noexcept
+        {
+            return std::visit([ctx](auto&& val) {
+                return js_traits<std::decay_t<decltype(val)>>::wrap(ctx, val);
+            }, std::move(val));
+        }
+    private:
+        template<typename T>
+        using is_boolean = std::is_same<std::decay_t<T>, bool>;
+
+        template<typename T>
+        using is_string = std::is_convertible<std::decay_t<T>, std::string_view>;
+
+        template<typename T>
+        static bool is_compatible(JSContext* ctx, JSValueConst val) noexcept
+        {
+            const auto tag = JS_VALUE_GET_TAG(val);
+            switch (tag)
+            {
+            case JS_TAG_STRING:
+                return is_string<T>::value;
+            case JS_TAG_FUNCTION_BYTECODE:
+                return std::is_function_v<T>;
+            case JS_TAG_OBJECT:
+                if (JS_IsArray(val) == 1)
+                    return std::ranges::input_range<T> || detail::is_specialization_of_v<T, std::pair>;
+                if constexpr (detail::is_specialization_of_v<T, std::shared_ptr>)
+                {
+                    if (JS_GetClassID(val) == js_traits<T>::qjs_class_id)
+                        return true;
+                }
+                return false;
+            case JS_TAG_INT:
+            case JS_TAG_BIG_INT:
+                return std::is_arithmetic_v<T>;
+            case JS_TAG_BOOL:
+                return is_boolean<T>::value || std::is_arithmetic_v<T>;
+            }
+
+            if (tag >= JS_TAG_FLOAT64) // any larger tag is FLOAT64 if JS_NAN_BOXING
+                return std::is_floating_point_v<T>;
+            return false;
+        }
+
+        /** Attempt to match common types (integral, floating point, string, etc.) */
+        template<template<typename> typename Trait, typename U, typename... Us>
+        static std::optional<std::variant<Ts...>> unwrap_impl(JSContext* ctx, JSValueConst val)
+        {
+            if constexpr (Trait<U>::value)
+                return js_traits<U>::unwrap(ctx, val);
+            else if constexpr (sizeof...(Us) > 0)
+                return unwrap_impl<Trait, Us...>(ctx, val);
+            else
+                return std::nullopt;
+        }
+
+        /** Attempt to match class ID with type */
+        template<typename U, typename... Us>
+        static std::optional<std::variant<Ts...>> unwrap_obj(JSContext* ctx, JSValueConst val, JSClassID class_id)
+        {
+            if constexpr (detail::is_specialization_of_v<U, std::shared_ptr>)
+            {
+                if (class_id == js_traits<U>::qjs_class_id)
+                    return js_traits<U>::unwrap(ctx, val);
+            }
+
+            if constexpr (detail::is_specialization_of_v<U, std::variant>)
+            {
+                if (auto opt = js_traits<std::optional<U>>::unwrap(ctx, val))
+                    return opt.value();
+            }
+
+            if constexpr (std::ranges::input_range<U>)
+            {
+                bool ok{};
+                using Value = std::ranges::range_value_t<U>;
+
+                if constexpr (detail::is_specialization_of_v<Value, std::pair>)
+                {
+                    // Not a "proper reading" here, unlike in the other block.
+                    // Doing so would require getting object properties, which is way too slow.
+                    ok = JS_IsObject(val);
+                }
+                else
+                {
+                    if (JS_IsArray(val))
+                    {
+                        JSValue first = JS_GetPropertyUint32(ctx, val, 0);
+                        ok = is_compatible<std::decay_t<Value>>(ctx, first);
+                        JS_FreeValue(ctx, first);
+                    }
+                }
+
+                if (ok)
+                    return js_traits<U>::unwrap(ctx, val);
+            }
+
+            if constexpr (detail::is_specialization_of_v<U, std::pair>)
+            {
+                if (JS_IsArray(val))
+                {
+                    JSValue first = JS_GetPropertyUint32(ctx, val, 0);
+                    JSValue second = JS_GetPropertyUint32(ctx, val, 1);
+                    bool ok =
+                        is_compatible<std::decay_t<typename U::first_type>>(ctx, first) &&
+                        is_compatible<std::decay_t<typename U::second_type>>(ctx, second);
+                    JS_FreeValue(ctx, first);
+                    JS_FreeValue(ctx, second);
+                    if (ok)
+                        return js_traits<U>::unwrap(ctx, val);
+                }
+            }
+
+            if constexpr (sizeof...(Us) > 0)
+                return unwrap_obj<Us...>(ctx, val, class_id);
+            else
+                return std::nullopt;
+        }
+
+        /** Attempt to cast to types satisfying traits, ordered in terms of priority */
+        template<template<typename> typename Trait, template<typename> typename... Traits>
+        static std::variant<Ts...> unwrap_priority(JSContext* ctx, JSValueConst val)
+        {
+            if (auto result = unwrap_impl<Trait, Ts...>(ctx, val))
+                return result.value();
+
+            if constexpr (sizeof...(Traits) > 0)
+            {
+                return unwrap_priority<Traits...>(ctx, val);
+            }
+            else
+            {
+                JS_ThrowTypeError(ctx, "Expected type %s", typeid(std::variant<Ts...>).name());
+                throw exception(ctx);
+            }
         }
     };
 
