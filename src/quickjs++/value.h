@@ -324,6 +324,12 @@ namespace qjs
                 else
                     callback(detail::unwrap_free<std::decay_t<R>>(ctx, JS_PromiseResult(ctx, v)));
             }
+            else if (promiseState == JS_PROMISE_REJECTED)
+            {
+                JSValue reason = JS_PromiseResult(ctx, v);
+                JS_Throw(ctx, JS_DupValue(ctx, reason));
+                throw exception(ctx);
+            }
             else if (JS_IsFunction(ctx, v))
             {
                 // async functions will return a promise which we want to handle
@@ -342,7 +348,8 @@ namespace qjs
             }
             else
             {
-                throw std::runtime_error("Value is either non-invocable or a rejected promise");
+                JS_ThrowTypeError(ctx, "Value is not callable");
+                throw exception(ctx);
             }
         }
     };
