@@ -768,8 +768,8 @@ namespace qjs
                 register_with_base(derived_class_id, ptr_cast_fcn);
 
             // Instrument the derived class so that it can propagate new derived classes to us.
-            auto old_register_with_base = js_traits<std::shared_ptr<D>>::registerWithBase;
-            js_traits<std::shared_ptr<D>>::registerWithBase =
+            auto old_register_with_base = js_traits<std::shared_ptr<D>>::register_with_base;
+            js_traits<std::shared_ptr<D>>::register_with_base =
                 [old_register_with_base = std::move(old_register_with_base)]
                 (JSClassID derived_class_id, derived_ptr_cast_fcn_t derived_ptr_cast_fcn) {
                     if (old_register_with_base)
