@@ -2,6 +2,10 @@
 #include "value.h"
 #include <filesystem>
 
+#if __has_include(<meta>)
+#include <meta>
+#endif
+
 namespace qjs
 {
     namespace detail
@@ -157,6 +161,45 @@ namespace qjs
                 return add(name, js_traits<T>::wrap(m_ctx, std::forward<T>(value)));
         }
 
+    #if __has_include(<meta>)
+        template<typename T> requires std::is_class_v<T>
+        class_registrar<T> reflect_class(const char* name = "")
+        {
+            constexpr std::meta::access_context acctx = std::meta::access_context::current();
+            constexpr std::span<const std::meta::info> members = std::define_static_array(std::meta::members_of(^^T, acctx));
+
+            class_registrar<T> reg(
+                *name != '\0' ? name : std::define_static_string(std::meta::display_string_of(^^T)),
+                context::get(m_ctx),
+                this);
+
+            template for (constexpr std::meta::info B : std::define_static_array(std::meta::bases_of(^^T, acctx)))
+            {
+                using base_t = [:std::meta::type_of(B):];
+                if (!js_traits<std::shared_ptr<base_t>>::is_registered())
+                    reflect_class<base_t>();
+                reg.template base<base_t>();
+            }
+
+            // because .constructor needs to be called before .static_member,
+            // we need to run through the constructor(s) first.
+            // we can also only add one constructor, so we're taking the first one.
+            constexpr auto ctor_it = std::ranges::find_if(members, is_normal_constructor);
+            if constexpr (ctor_it != members.end())
+                add_constructor_with(reg, typename[:param_types(*ctor_it):]{});
+
+            template for (constexpr std::meta::info M : members)
+            {
+                if constexpr (std::meta::is_static_member(M))
+                    reg.template static_member<&[:M:]>(std::define_static_string(std::meta::display_string_of(M)));
+                else if constexpr (is_normal_member(M))
+                    reg.template member<&[:M:]>(std::define_static_string(std::meta::display_string_of(M)));
+            }
+
+            return reg;
+        }
+    #endif
+
         template<typename T> requires std::is_class_v<T>
         class_registrar<T> register_class(const char* name)
         {
@@ -169,6 +212,38 @@ namespace qjs
         const char* m_name;
 
         static bool set_export(JSContext* ctx, JSModuleDef* m, const nvp& e);
+
+    #if __has_include(<meta>)
+        template<typename... Ts>
+        struct type_list {};
+
+        template<typename T, typename... Ts>
+        static class_registrar<T>& add_constructor_with(class_registrar<T>& reg, const type_list<Ts...>&)
+        {
+            return reg.template constructor<Ts...>();
+        }
+
+        static consteval bool is_normal_constructor(std::meta::info I)
+        {
+            return std::meta::is_constructor(I) &&
+                   !std::meta::is_copy_constructor(I) &&
+                   !std::meta::is_move_constructor(I);
+        }
+
+        static consteval bool is_normal_member(std::meta::info I)
+        {
+            return std::meta::is_nonstatic_data_member(I) ||
+                   (std::meta::is_function(I) &&
+                    !std::meta::is_constructor(I) &&
+                    !std::meta::is_special_member_function(I));
+        }
+
+        static consteval std::meta::info param_types(std::meta::info I)
+        {
+            return std::meta::substitute(^^type_list,
+                std::meta::parameters_of(I) | std::views::transform(std::meta::type_of));
+        }
+    #endif
     };
 
     /** Helper class to register class members and constructors.
