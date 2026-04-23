@@ -113,7 +113,7 @@ namespace qjs
          *  @param name Class name in JS engine
          *  @param proto JS class prototype or JS_UNDEFINED. Can be created with class_registrar.
         */
-        template <class T>
+        template <typename T> requires std::is_class_v<T>
         void register_class(const char* name, JSValue proto = JS_NULL)
         {
             js_traits<std::shared_ptr<T>>::register_class(ctx, name, proto);
@@ -186,6 +186,7 @@ namespace qjs
               m_name(name),
               m_prototype(context.new_object()) {}
         class_registrar(const class_registrar&) = delete;
+        class_registrar(class_registrar&&) = default;
 
         ~class_registrar()
         {
@@ -199,10 +200,10 @@ namespace qjs
             requires (std::is_class_v<B> && !std::same_as<B, T>)
         class_registrar& base()
         {
-            assert(js_traits<std::shared_ptr<B>>::QJSClassId && "base class is not registered");
-            js_traits<std::shared_ptr<T>>::template ensureCanCastToBase<B>();
+            assert(js_traits<std::shared_ptr<B>>::is_registered() && "base class is not registered");
+            js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<B>(m_context.ctx);
 
-            JSValue base_proto = JS_GetClassProto(m_context.ctx, js_traits<std::shared_ptr<B>>::QJSClassId);
+            JSValue base_proto = JS_GetClassProto(m_context.ctx, js_traits<std::shared_ptr<B>>::qjs_class_id);
             int err = JS_SetPrototype(m_context.ctx, m_prototype.v, base_proto);
             JS_FreeValue(m_context.ctx, base_proto);
 
@@ -291,7 +292,12 @@ namespace qjs
         {
             assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);
-            m_ctor.add_member<M>(name);
+
+            if constexpr (std::is_function_v<std::remove_pointer_t<decltype(M)>>)
+                m_ctor[name] = fwrapper<decltype(M)> { M, name };
+            else
+                m_ctor.add_member<M>(name);
+
             return *this;
         }
     private:

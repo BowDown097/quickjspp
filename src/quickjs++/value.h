@@ -96,12 +96,7 @@ namespace qjs
         };
 
         template<typename T>
-        constexpr bool maybe_static_member_v =
-            !std::is_member_function_pointer_v<T> &&
-            (std::is_pointer_v<T> || !std::is_function_v<std::remove_pointer_t<T>>);
-
-        template<typename T>
-        constexpr bool loose_is_member_v = std::is_member_object_pointer_v<T> || maybe_static_member_v<T>;
+        constexpr bool maybe_static_member_v = !std::is_member_pointer_v<T> && std::is_pointer_v<T>;
     }
 
     /** JSValue with RAAI semantics.
@@ -239,7 +234,7 @@ namespace qjs
         }
 
         // add<&T::member>("member"); OR add<&T::static_member>("static_member");
-        template<auto M> requires detail::loose_is_member_v<decltype(M)>
+        template<auto M> requires (std::is_member_object_pointer_v<decltype(M)> || detail::maybe_static_member_v<decltype(M)>)
         value& add_member(const char* name)
         {
             using GetSet = detail::get_set<M>;

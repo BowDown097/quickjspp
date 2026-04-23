@@ -5,10 +5,7 @@ add_subdirectory(quickjs)
 
 add_library(quickjs++)
 
-set_target_properties(quickjs++
-    PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON)
+target_compile_features(quickjs++ PUBLIC cxx_std_20)
 
 target_sources(quickjs++
     PRIVATE
