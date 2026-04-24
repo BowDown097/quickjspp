@@ -325,20 +325,22 @@ namespace qjs
                 JS_Throw(ctx, JS_DupValue(ctx, reason));
                 throw exception(ctx);
             }
-            else if (JS_IsFunction(ctx, v))
+            else if (JS_IsAsyncFunction(v))
             {
                 // async functions will return a promise which we want to handle
                 value fresult = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
-                if ((*this)["constructor"]["name"].as<std::string_view>() == "AsyncFunction")
+                fresult.invoke_then(std::forward<F>(callback));
+            }
+            else if (JS_IsFunction(ctx, v))
+            {
+                if constexpr (std::is_void_v<R>)
                 {
-                    fresult.invoke_then(std::forward<F>(callback));
+                    callback();
                 }
                 else
                 {
-                    if constexpr (std::is_void_v<R>)
-                        callback();
-                    else
-                        callback(fresult.as<R>());
+                    value fresult = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
+                    callback(fresult.as<R>());
                 }
             }
             else
