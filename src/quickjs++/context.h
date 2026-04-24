@@ -2,7 +2,7 @@
 #include "value.h"
 #include <filesystem>
 
-#if __has_include(<meta>)
+#ifdef __cpp_impl_reflection
 #include <meta>
 #endif
 
@@ -161,17 +161,17 @@ namespace qjs
                 return add(name, js_traits<T>::wrap(m_ctx, std::forward<T>(value)));
         }
 
-    #if __has_include(<meta>)
+    #ifdef __cpp_impl_reflection
         template<typename T> requires std::is_class_v<T>
         class_registrar<T> reflect_class(const char* name = "")
         {
-            constexpr std::meta::access_context acctx = std::meta::access_context::current();
-            constexpr std::span<const std::meta::info> members = std::define_static_array(std::meta::members_of(^^T, acctx));
+            constexpr auto acctx = std::meta::access_context::current();
+            constexpr auto members = std::define_static_array(std::meta::members_of(^^T, acctx));
 
-            class_registrar<T> reg(
-                *name != '\0' ? name : std::define_static_string(std::meta::display_string_of(^^T)),
-                context::get(m_ctx),
-                this);
+            if (!name || name[0] == '\0')
+                name = std::define_static_string(std::meta::display_string_of(^^T));
+
+            class_registrar<T> reg(name, context::get(m_ctx), this);
 
             template for (constexpr std::meta::info B : std::define_static_array(std::meta::bases_of(^^T, acctx)))
             {
@@ -184,16 +184,20 @@ namespace qjs
             // because .constructor needs to be called before .static_member,
             // we need to run through the constructor(s) first.
             // we can also only add one constructor, so we're taking the first one.
-            constexpr auto ctor_it = std::ranges::find_if(members, is_normal_constructor);
-            if constexpr (ctor_it != members.end())
-                add_constructor_with(reg, typename[:param_types(*ctor_it):]{});
+            constexpr auto ctor = std::ranges::find_if(members, is_normal_constructor);
+            if constexpr (ctor != members.end())
+            {
+                using params_t = [:param_types(*ctor):];
+                add_constructor_with(reg, static_cast<params_t*>(nullptr));
+            }
 
             template for (constexpr std::meta::info M : members)
             {
+                constexpr const char* member_name = std::define_static_string(std::meta::display_string_of(M));
                 if constexpr (std::meta::is_static_member(M))
-                    reg.template static_member<&[:M:]>(std::define_static_string(std::meta::display_string_of(M)));
+                    reg.template static_member<&[:M:]>(member_name);
                 else if constexpr (is_normal_member(M))
-                    reg.template member<&[:M:]>(std::define_static_string(std::meta::display_string_of(M)));
+                    reg.template member<&[:M:]>(member_name);
             }
 
             return reg;
@@ -213,12 +217,12 @@ namespace qjs
 
         static bool set_export(JSContext* ctx, JSModuleDef* m, const nvp& e);
 
-    #if __has_include(<meta>)
+    #ifdef __cpp_impl_reflection
         template<typename... Ts>
         struct type_list {};
 
         template<typename T, typename... Ts>
-        static class_registrar<T>& add_constructor_with(class_registrar<T>& reg, const type_list<Ts...>&)
+        static class_registrar<T>& add_constructor_with(class_registrar<T>& reg, type_list<Ts...>*)
         {
             return reg.template constructor<Ts...>();
         }
@@ -260,6 +264,7 @@ namespace qjs
               m_module(module),
               m_name(name),
               m_prototype(context.new_object()) {}
+
         class_registrar(const class_registrar&) = delete;
         class_registrar(class_registrar&&) = default;
 

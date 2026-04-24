@@ -63,8 +63,7 @@ namespace qjs
 
     module& context::add_module(const char* name)
     {
-        m_modules.emplace_back(ctx, name);
-        return m_modules.back();
+        return m_modules.emplace_back(ctx, name);
     }
 
     value context::eval(std::string_view buffer, const char* filename, int flags)
