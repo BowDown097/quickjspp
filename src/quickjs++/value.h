@@ -94,9 +94,6 @@ namespace qjs
             static const R& get(bool) { return *M; }
             static R& set(bool, R&& value) { return *M = std::forward<R>(value); }
         };
-
-        template<typename T>
-        constexpr bool maybe_static_member_v = !std::is_member_pointer_v<T> && std::is_pointer_v<T>;
     }
 
     /** JSValue with RAAI semantics.
@@ -234,14 +231,23 @@ namespace qjs
         }
 
         // add<&T::member>("member"); OR add<&T::static_member>("static_member");
-        template<auto M> requires (std::is_member_object_pointer_v<decltype(M)> || detail::maybe_static_member_v<decltype(M)>)
+        template<auto M> requires (std::is_member_pointer_v<decltype(M)> || std::is_pointer_v<decltype(M)>)
         value& add_member(const char* name)
         {
-            using GetSet = detail::get_set<M>;
-            if constexpr (GetSet::is_const_v)
-                return add_getter<GetSet::get>(name);
-            else
-                return add_getter_setter<GetSet::get, GetSet::set>(name);
+            constexpr bool is_membfunc = std::is_member_function_pointer_v<decltype(M)>;
+            if constexpr (std::is_function_v<std::remove_pointer_t<decltype(M)>> || is_membfunc)
+            {
+                (*this)[name] = fwrapper<decltype(M), is_membfunc> { M, name };
+                return *this;
+            }
+            else if constexpr (std::is_object_v<decltype(M)>)
+            {
+                using GetSet = detail::get_set<M>;
+                if constexpr (GetSet::is_const_v)
+                    return add_getter<GetSet::get>(name);
+                else
+                    return add_getter_setter<GetSet::get, GetSet::set>(name);
+            }
         }
 
         std::string to_json(const value& replacer = value(JS_UNDEFINED), const value& space = value(JS_UNDEFINED)) const

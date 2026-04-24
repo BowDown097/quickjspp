@@ -276,8 +276,7 @@ namespace qjs
         /** Sets the base class.
          *  @tparam B The base class in question
          */
-        template<typename B>
-            requires (std::is_class_v<B> && !std::same_as<B, T>)
+        template<typename B> requires (std::is_class_v<B> && !std::same_as<B, T>)
         class_registrar& base()
         {
             assert(js_traits<std::shared_ptr<B>>::is_registered() && "base class is not registered");
@@ -339,10 +338,7 @@ namespace qjs
         class_registrar& member(const char* name)
         {
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);
-            if constexpr (std::is_member_function_pointer_v<decltype(M)>)
-                m_prototype[name] = fwrapper<decltype(M), true> { M, name };
-            else
-                m_prototype.add_member<M>(name);
+            m_prototype.add_member<M>(name);
             return *this;
         }
 
@@ -353,8 +349,8 @@ namespace qjs
         template<auto FGet, auto FSet = nullptr>
         class_registrar& property(const char* name)
         {
-            js_traits<std::shared_ptr<T>>::template ensureCanCastToBase<FGet>();
-            js_traits<std::shared_ptr<T>>::template ensureCanCastToBase<FSet>();
+            js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<FGet>();
+            js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<FSet>();
             if constexpr (std::is_null_pointer_v<decltype(FSet)>)
                 m_prototype.add_getter<FGet>(name);
             else
@@ -367,17 +363,12 @@ namespace qjs
          *  struct T { static int var; static int func(); }
          *  module.register_class<T>("T").constructor<>("T").static_member<&T::var>("var").static_member<&T::func>("func");
          */
-        template<auto M> requires detail::maybe_static_member_v<decltype(M)>
+        template<auto M> requires std::is_pointer_v<decltype(M)>
         class_registrar& static_member(const char* name)
         {
             assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);
-
-            if constexpr (std::is_function_v<std::remove_pointer_t<decltype(M)>>)
-                m_ctor[name] = fwrapper<decltype(M)> { M, name };
-            else
-                m_ctor.add_member<M>(name);
-
+            m_ctor.add_member<M>(name);
             return *this;
         }
     private:
