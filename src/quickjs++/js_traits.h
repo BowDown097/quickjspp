@@ -1,5 +1,6 @@
 #pragma once
 #include "function_wrapping.h"
+#include <cinttypes>
 #include <functional>
 #include <memory>
 #include <ranges>
@@ -298,7 +299,7 @@ namespace qjs
             }
             if (length != 2)
             {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expected array of length 2, got %d",
+                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expected array of length 2, got %" PRId64,
                                   typeid(std::pair<U, V>).name(), length);
                 throw exception(ctx);
             }
@@ -383,7 +384,7 @@ namespace qjs
                 if (auto result = unwrap_obj<Ts...>(ctx, val, JS_GetClassID(val)))
                     return result.value();
                 JS_ThrowTypeError(
-                    ctx, "Expected type %s, got object with classid %d",
+                    ctx, "Expected type %s, got object with classid %u",
                     typeid(std::variant<Ts...>).name(), JS_GetClassID(val));
                 throw exception(ctx);
             case JS_TAG_INT:
@@ -874,7 +875,7 @@ namespace qjs
             }
             else // none of the above
             {
-                JS_ThrowTypeError(ctx, "Expected type %s, got object with class ID %d", typeid(T).name(), class_id);
+                JS_ThrowTypeError(ctx, "Expected type %s, got object with class ID %u", typeid(T).name(), class_id);
                 throw exception(ctx);
             }
 

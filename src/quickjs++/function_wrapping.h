@@ -14,10 +14,10 @@ namespace qjs
             {
                 if (argc <= I)
                 {
-                    JS_ThrowTypeError(ctx, "Expected at least %lu arguments but received %d",
-                                      (unsigned long)NArgs, argc);
+                    JS_ThrowTypeError(ctx, "Expected at least %zu arguments but received %d", NArgs, argc);
                     throw exception(ctx);
                 }
+
                 return js_traits<T>::unwrap(ctx, argv[I]);
             }
         };
