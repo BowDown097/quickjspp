@@ -1,6 +1,6 @@
 #pragma once
 #include "exception.h"
-#include <quickjs/quickjs.h>
+#include <quickjs.h>
 #include <string_view>
 
 namespace qjs

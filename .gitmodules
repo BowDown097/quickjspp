@@ -1,3 +1,6 @@
+[submodule "nameof"]
+	path = deps/nameof
+	url = https://github.com/Neargye/nameof
 [submodule "quickjs"]
-	path = quickjs
+	path = deps/quickjs
 	url = https://github.com/quickjs-ng/quickjs

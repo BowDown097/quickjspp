@@ -169,7 +169,7 @@ namespace qjs
             constexpr auto members = std::define_static_array(std::meta::members_of(^^T, acctx));
 
             if (!name || name[0] == '\0')
-                name = std::define_static_string(std::meta::display_string_of(^^T));
+                name = qjs_nameof<T>();
 
             class_registrar<T> reg(name, context::get(m_ctx), this);
 

@@ -230,7 +230,7 @@ namespace qjs
 
             if (!std::in_range<Integer>(result))
             {
-                JS_ThrowRangeError(ctx, "Could not unwrap integer into %s", typeid(Integer).name());
+                JS_ThrowRangeError(ctx, "Could not unwrap integer into %s", qjs_nameof<Integer>());
                 throw exception(ctx);
             }
 
@@ -242,7 +242,7 @@ namespace qjs
         {
             if (!std::in_range<R>(val))
             {
-                JS_ThrowRangeError(ctx, "Could not wrap integer into %s", typeid(R).name());
+                JS_ThrowRangeError(ctx, "Could not wrap integer into %s", qjs_nameof<R>());
                 throw exception(ctx);
             }
 
@@ -294,13 +294,13 @@ namespace qjs
             int64_t length;
             if (JS_GetLength(ctx, val, &length) != 0)
             {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", typeid(std::pair<U, V>).name());
+                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", qjs_nameof<std::pair<U, V>>());
                 throw exception(ctx);
             }
             if (length != 2)
             {
                 JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expected array of length 2, got %" PRId64,
-                                  typeid(std::pair<U, V>).name(), length);
+                                  qjs_nameof<std::pair<U, V>>(), length);
                 throw exception(ctx);
             }
 
@@ -385,7 +385,7 @@ namespace qjs
                     return result.value();
                 JS_ThrowTypeError(
                     ctx, "Expected type %s, got object with classid %u",
-                    typeid(std::variant<Ts...>).name(), JS_GetClassID(val));
+                    qjs_nameof<std::variant<Ts...>>(), JS_GetClassID(val));
                 throw exception(ctx);
             case JS_TAG_INT:
             case JS_TAG_BIG_INT:
@@ -397,7 +397,7 @@ namespace qjs
             if (tag >= JS_TAG_FLOAT64) // any larger tag is FLOAT64 if JS_NAN_BOXING
                 return unwrap_priority<std::is_floating_point>(ctx, val);
 
-            JS_ThrowTypeError(ctx, "Expected type %s, got tag %d", typeid(std::variant<Ts...>).name(), tag);
+            JS_ThrowTypeError(ctx, "Expected type %s, got tag %d", qjs_nameof<std::variant<Ts...>>(), tag);
             throw exception(ctx);
         }
 
@@ -533,7 +533,7 @@ namespace qjs
             }
             else
             {
-                JS_ThrowTypeError(ctx, "Expected type %s", typeid(std::variant<Ts...>).name());
+                JS_ThrowTypeError(ctx, "Expected type %s", qjs_nameof<std::variant<Ts...>>());
                 throw exception(ctx);
             }
         }
@@ -551,7 +551,7 @@ namespace qjs
             int64_t length;
             if (!JS_IsArray(val) || JS_GetLength(ctx, val, &length) != 0)
             {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", typeid(Range).name());
+                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", qjs_nameof<Range>());
                 throw exception(ctx);
             }
 
@@ -818,8 +818,8 @@ namespace qjs
             JSContext* ctx, const char* name = nullptr, JSValue proto = JS_NULL,
             JSClassCall* call = nullptr, JSClassExoticMethods* exotic = nullptr)
         {
-            if (!name)
-                name = typeid(T).name();
+            if (!name || name[0] == '\0')
+                name = qjs_nameof<T>();
 
             JSRuntime* rt = JS_GetRuntime(ctx);
             if (!is_registered())
@@ -875,7 +875,7 @@ namespace qjs
             }
             else // none of the above
             {
-                JS_ThrowTypeError(ctx, "Expected type %s, got object with class ID %u", typeid(T).name(), class_id);
+                JS_ThrowTypeError(ctx, "Expected type %s, got object with class ID %u", qjs_nameof<T>(), class_id);
                 throw exception(ctx);
             }
 
