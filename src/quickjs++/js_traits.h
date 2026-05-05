@@ -415,6 +415,24 @@ namespace qjs
         using is_string = std::is_convertible<std::decay_t<T>, std::string_view>;
 
         template<typename T>
+        static bool is_compatible_obj(JSContext* ctx, JSValueConst val, JSClassID class_id) noexcept
+        {
+            if constexpr (detail::is_specialization_of_v<T, std::shared_ptr>)
+            {
+                return JS_GetClassID(val) == js_traits<T>::qjs_class_id;
+            }
+            else if constexpr (std::is_class_v<T>)
+            {
+                using shared_traits = js_traits<std::shared_ptr<T>>;
+                return shared_traits::is_registered() && JS_GetClassID(val) == shared_traits::qjs_class_id;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        template<typename T>
         static bool is_compatible(JSContext* ctx, JSValueConst val) noexcept
         {
             const auto tag = JS_VALUE_GET_TAG(val);
@@ -425,14 +443,9 @@ namespace qjs
             case JS_TAG_FUNCTION_BYTECODE:
                 return std::is_function_v<T>;
             case JS_TAG_OBJECT:
-                if (JS_IsArray(val) == 1)
-                    return std::ranges::input_range<T> || detail::is_specialization_of_v<T, std::pair>;
-                if constexpr (detail::is_specialization_of_v<T, std::shared_ptr>)
-                {
-                    if (JS_GetClassID(val) == js_traits<T>::qjs_class_id)
-                        return true;
-                }
-                return false;
+                return JS_IsArray(val)
+                    ? std::ranges::input_range<T> || detail::is_specialization_of_v<T, std::pair>
+                    : is_compatible_obj<T>(ctx, val, JS_GetClassID(val));
             case JS_TAG_INT:
             case JS_TAG_BIG_INT:
                 return std::is_arithmetic_v<T>;
@@ -466,14 +479,12 @@ namespace qjs
                 if (class_id == js_traits<U>::qjs_class_id)
                     return js_traits<U>::unwrap(ctx, val);
             }
-
-            if constexpr (detail::is_specialization_of_v<U, std::variant>)
+            else if constexpr (detail::is_specialization_of_v<U, std::variant>)
             {
                 if (auto opt = js_traits<std::optional<U>>::unwrap(ctx, val))
                     return opt.value();
             }
-
-            if constexpr (std::ranges::input_range<U>)
+            else if constexpr (std::ranges::input_range<U>)
             {
                 bool ok{};
                 using Value = std::ranges::range_value_t<U>;
@@ -484,21 +495,17 @@ namespace qjs
                     // Doing so would require getting object properties, which is way too slow.
                     ok = JS_IsObject(val);
                 }
-                else
+                else if (JS_IsArray(val))
                 {
-                    if (JS_IsArray(val))
-                    {
-                        JSValue first = JS_GetPropertyUint32(ctx, val, 0);
-                        ok = is_compatible<std::decay_t<Value>>(ctx, first);
-                        JS_FreeValue(ctx, first);
-                    }
+                    JSValue first = JS_GetPropertyUint32(ctx, val, 0);
+                    ok = is_compatible<std::decay_t<Value>>(ctx, first);
+                    JS_FreeValue(ctx, first);
                 }
 
                 if (ok)
                     return js_traits<U>::unwrap(ctx, val);
             }
-
-            if constexpr (detail::is_specialization_of_v<U, std::pair>)
+            else if constexpr (detail::is_specialization_of_v<U, std::pair>)
             {
                 if (JS_IsArray(val))
                 {
@@ -512,6 +519,11 @@ namespace qjs
                     if (ok)
                         return js_traits<U>::unwrap(ctx, val);
                 }
+            }
+            else if constexpr (std::is_class_v<U> && has_js_traits<U>)
+            {
+                if (is_compatible_obj<U>(ctx, val, class_id))
+                    return js_traits<U>::unwrap(ctx, val);
             }
 
             if constexpr (sizeof...(Us) > 0)
