@@ -298,25 +298,7 @@ namespace qjs
             JSPromiseStateEnum promiseState = JS_PromiseState(ctx, v);
             if (promiseState == JS_PROMISE_PENDING)
             {
-                auto cbptr = new std::decay_t<F>(std::forward<F>(callback));
-
-                JSCClosure* closure = [](JSContext* ctx, JSValueConst, int, JSValueConst* argv, int, void* opaque) {
-                    if (auto cb = static_cast<std::decay_t<F>*>(opaque))
-                    {
-                        if constexpr (std::is_void_v<R>)
-                            (*cb)();
-                        else
-                            (*cb)(js_traits<std::decay_t<R>>::unwrap(ctx, argv[0]));
-                    }
-                    return JS_NULL;
-                };
-
-                JSCClosureFinalizerFunc* finalizer = [](void* p) {
-                    delete static_cast<std::decay_t<F>*>(p);
-                };
-
-                value then(ctx, JS_NewCClosure(ctx, closure, nullptr, finalizer, 0, 0, cbptr));
-                detail::invoke_on_then(ctx, v, &then.v);
+                handle_pending_promise<R>(std::forward<F>(callback), ctx, v);
             }
             else if (promiseState == JS_PROMISE_FULFILLED)
             {
@@ -333,9 +315,10 @@ namespace qjs
             }
             else if (JS_IsAsyncFunction(v))
             {
-                // async functions will return a promise which we want to handle
-                value fresult = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
-                fresult.invoke_then(std::forward<F>(callback));
+                // async functions will return a pending promise that we can immediately handle.
+                // JSValue is used here instead of ::value, otherwise the GC double frees it.
+                JSValue promise = as<std::function<JSValue(Args...)>>()(std::forward<Args>(args)...);
+                handle_pending_promise<R>(std::forward<F>(callback), ctx, promise);
             }
             else if (JS_IsFunction(ctx, v))
             {
@@ -345,8 +328,8 @@ namespace qjs
                 }
                 else
                 {
-                    value fresult = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
-                    callback(fresult.as<R>());
+                    value result = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
+                    callback(result.as<R>());
                 }
             }
             else
@@ -354,6 +337,30 @@ namespace qjs
                 JS_ThrowTypeError(ctx, "Value is not callable");
                 throw exception(ctx);
             }
+        }
+
+        template<typename R, typename F>
+        static void handle_pending_promise(F&& callback, JSContext* ctx, JSValueConst v)
+        {
+            auto cbptr = new std::decay_t<F>(std::forward<F>(callback));
+
+            JSCClosure* closure = [](JSContext* ctx, JSValueConst, int, JSValueConst* argv, int, void* opaque) {
+                if (auto cb = static_cast<std::decay_t<F>*>(opaque))
+                {
+                    if constexpr (std::is_void_v<R>)
+                        (*cb)();
+                    else
+                        (*cb)(js_traits<std::decay_t<R>>::unwrap(ctx, argv[0]));
+                }
+                return JS_NULL;
+            };
+
+            JSCClosureFinalizerFunc* finalizer = [](void* p) {
+                delete static_cast<std::decay_t<F>*>(p);
+            };
+
+            value then(ctx, JS_NewCClosure(ctx, closure, nullptr, finalizer, 0, 0, cbptr));
+            detail::invoke_on_then(ctx, v, &then.v);
         }
     };
 
