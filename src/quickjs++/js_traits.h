@@ -419,12 +419,12 @@ namespace qjs
         {
             if constexpr (detail::is_specialization_of_v<T, std::shared_ptr>)
             {
-                return JS_GetClassID(val) == js_traits<T>::qjs_class_id;
+                return class_id == js_traits<T>::qjs_class_id;
             }
             else if constexpr (std::is_class_v<T>)
             {
                 using shared_traits = js_traits<std::shared_ptr<T>>;
-                return shared_traits::is_registered() && JS_GetClassID(val) == shared_traits::qjs_class_id;
+                return shared_traits::is_registered() && class_id == shared_traits::qjs_class_id;
             }
             else
             {
