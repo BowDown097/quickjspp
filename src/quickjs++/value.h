@@ -83,7 +83,7 @@ namespace qjs
         {
             inline static constexpr bool is_const_v = std::is_const_v<R>;
             static const R& get(const std::shared_ptr<T>& ptr) { return *ptr.*M; }
-            static R& set(std::shared_ptr<T> ptr, R&& value) { return *ptr.*M = std::forward<R>(value); }
+            static R& set(std::shared_ptr<T> ptr, R value) { return *ptr.*M = std::move(value); }
         };
 
         // M - static member object
@@ -92,7 +92,7 @@ namespace qjs
         {
             inline static constexpr bool is_const_v = std::is_const_v<R>;
             static const R& get(bool) { return *M; }
-            static R& set(bool, R&& value) { return *M = std::forward<R>(value); }
+            static R& set(bool, R value) { return *M = std::move(value); }
         };
     }
 

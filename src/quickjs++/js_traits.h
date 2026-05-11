@@ -345,18 +345,9 @@ namespace qjs
         static auto unwrap(JSContext* ctx, JSValueConst val) noexcept
             -> std::optional<decltype(js_traits<std::decay_t<T>>::unwrap(ctx, val))>
         {
-            try
-            {
-                if (JS_IsNull(val))
-                    return std::nullopt;
-                return js_traits<std::decay_t<T>>::unwrap(ctx, val);
-            }
-            catch (const exception&)
-            {
-                // ignore and clear exception
-                JS_FreeValue(ctx, JS_GetException(ctx));
-            }
-            return std::nullopt;
+            if (JS_IsNull(val))
+                return std::nullopt;
+            return js_traits<std::decay_t<T>>::unwrap(ctx, val);
         }
 
         static JSValue wrap(JSContext* ctx, const std::optional<T>& val) noexcept
@@ -382,6 +373,8 @@ namespace qjs
                 return unwrap_priority<std::is_function>(ctx, val);
             case JS_TAG_OBJECT:
                 if (auto result = unwrap_obj<Ts...>(ctx, val, JS_GetClassID(val)))
+                    return result.value();
+                if (auto result = unwrap_tagged(ctx, val))
                     return result.value();
                 JS_ThrowTypeError(
                     ctx, "Expected type %s, got object with classid %u",
@@ -548,6 +541,54 @@ namespace qjs
                 JS_ThrowTypeError(ctx, "Expected type %s", qjs_nameof<std::variant<Ts...>>());
                 throw exception(ctx);
             }
+        }
+
+        static std::optional<std::variant<Ts...>> unwrap_tagged(JSContext* ctx, JSValueConst val)
+        {
+            using TT = std::variant<Ts...>;
+            using unwrap_fn = TT(*)(JSContext*, JSValueConst);
+
+            static constexpr auto p = []<size_t... Is>(std::index_sequence<Is...>) {
+                constexpr std::array<const char*, sizeof...(Is)> names = {
+                    qjs_nameof<std::variant_alternative_t<Is, TT>>()...
+                };
+                constexpr std::array<unwrap_fn, sizeof...(Is)> unwrap_fns = {
+                    [](JSContext* ctx, JSValueConst val) -> TT
+                    {
+                        using U = std::variant_alternative_t<Is, TT>;
+                        return js_traits<std::decay_t<U>>::unwrap(ctx, val);
+                    }...
+                };
+
+                return std::make_pair(names, unwrap_fns);
+            }(std::index_sequence_for<Ts...>());
+
+            JSValue type_val = JS_GetPropertyStr(ctx, val, "$type");
+            if (!JS_IsString(type_val))
+            {
+                JS_FreeValue(ctx, type_val);
+                return std::nullopt;
+            }
+
+            const char* typeName = JS_ToCString(ctx, type_val);
+
+            for (size_t i = 0; i < sizeof...(Ts); ++i)
+            {
+                if (strcmp(p.first[i], typeName) == 0)
+                {
+                    JS_FreeCString(ctx, typeName);
+                    JS_FreeValue(ctx, type_val);
+                    return p.second[i](ctx, val);
+                }
+            }
+
+            JS_ThrowTypeError(ctx, "Tagged type '%s' given, but was not found in %s",
+                typeName, qjs_nameof<std::variant<Ts...>>());
+
+            JS_FreeCString(ctx, typeName);
+            JS_FreeValue(ctx, type_val);
+
+            throw qjs::exception(ctx);
         }
     };
 
