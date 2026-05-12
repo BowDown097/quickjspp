@@ -1,17 +1,10 @@
 cmake_minimum_required(VERSION 3.23)
 project(quickjs++ LANGUAGES CXX)
 
-option(QJS_USE_NAMEOF "Use nameof library for resolving typenames" ON)
-
 add_library(quickjs++)
 
+add_subdirectory(deps/nameof)
 add_subdirectory(deps/quickjs)
-
-if(QJS_USE_NAMEOF)
-    add_subdirectory(deps/nameof)
-    target_compile_definitions(quickjs++ PUBLIC QJS_USING_NAMEOF)
-    target_link_libraries(quickjs++ PUBLIC nameof)
-endif()
 
 target_compile_features(quickjs++ PUBLIC cxx_std_20)
 
@@ -36,4 +29,4 @@ target_sources(quickjs++
             src/quickjs++/value.h)
 
 target_include_directories(quickjs++ PUBLIC src)
-target_link_libraries(quickjs++ PUBLIC qjs)
+target_link_libraries(quickjs++ PUBLIC nameof qjs)

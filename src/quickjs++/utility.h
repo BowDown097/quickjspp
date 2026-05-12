@@ -3,15 +3,9 @@
 #include <quickjs.h>
 #include <vector>
 
-#ifdef QJS_USING_NAMEOF
 #include <nameof.hpp>
 template<typename T>
 [[nodiscard]] constexpr const char* qjs_nameof() noexcept { return ::nameof::nameof_type<T>().data(); }
-#else
-#include <typeinfo>
-template<typename T>
-[[nodiscard]] const char* qjs_nameof() noexcept { return typeid(T).name(); }
-#endif
 
 namespace qjs
 {
