@@ -543,51 +543,35 @@ namespace qjs
             }
         }
 
+        template<typename T, auto F>
+        struct scoped_val { JSContext* ctx; T v; ~scoped_val() { F(ctx, v); } };
+
         static std::optional<std::variant<Ts...>> unwrap_tagged(JSContext* ctx, JSValueConst val)
         {
-            using TT = std::variant<Ts...>;
-            using unwrap_fn = TT(*)(JSContext*, JSValueConst);
+            using unwrap_fn_t = std::variant<Ts...>(*)(JSContext*, JSValueConst);
+            static constexpr std::array entries = {
+                std::make_pair(
+                    qjs_nameof<Ts>(),
+                    unwrap_fn_t([](JSContext* ctx, JSValueConst val) -> std::variant<Ts...> {
+                        return js_traits<std::decay_t<Ts>>::unwrap(ctx, val);
+                    })
+                )...
+            };
 
-            static constexpr auto p = []<size_t... Is>(std::index_sequence<Is...>) {
-                constexpr std::array<const char*, sizeof...(Is)> names = {
-                    qjs_nameof<std::variant_alternative_t<Is, TT>>()...
-                };
-                constexpr std::array<unwrap_fn, sizeof...(Is)> unwrap_fns = {
-                    [](JSContext* ctx, JSValueConst val) -> TT
-                    {
-                        using U = std::variant_alternative_t<Is, TT>;
-                        return js_traits<std::decay_t<U>>::unwrap(ctx, val);
-                    }...
-                };
-
-                return std::make_pair(names, unwrap_fns);
-            }(std::index_sequence_for<Ts...>());
-
-            JSValue type_val = JS_GetPropertyStr(ctx, val, "$type");
-            if (!JS_IsString(type_val))
-            {
-                JS_FreeValue(ctx, type_val);
+            scoped_val<JSValue, JS_FreeValue> typeVal = { ctx, JS_GetPropertyStr(ctx, val, "$type") };
+            if (!JS_IsString(typeVal.v))
                 return std::nullopt;
-            }
 
-            const char* typeName = JS_ToCString(ctx, type_val);
+            scoped_val<const char*, JS_FreeCString> typeName = { ctx, JS_ToCString(ctx, typeVal.v) };
+            if (!typeName.v || typeName.v[0] == '\0')
+                return std::nullopt;
 
-            for (size_t i = 0; i < sizeof...(Ts); ++i)
-            {
-                if (strcmp(p.first[i], typeName) == 0)
-                {
-                    JS_FreeCString(ctx, typeName);
-                    JS_FreeValue(ctx, type_val);
-                    return p.second[i](ctx, val);
-                }
-            }
+            for (const auto& [name, unwrapper] : entries)
+                if (strcmp(name, typeName.v) == 0)
+                    return unwrapper(ctx, val);
 
             JS_ThrowTypeError(ctx, "Tagged type '%s' given, but was not found in %s",
-                typeName, qjs_nameof<std::variant<Ts...>>());
-
-            JS_FreeCString(ctx, typeName);
-            JS_FreeValue(ctx, type_val);
-
+                typeName.v, qjs_nameof<std::variant<Ts...>>());
             throw qjs::exception(ctx);
         }
     };
