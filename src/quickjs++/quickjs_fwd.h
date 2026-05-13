@@ -38,4 +38,10 @@ struct js_traits;
 
 template<typename T>
 struct property_traits;
+
+namespace detail
+{
+template<typename Key>
+struct property_proxy;
+}
 }

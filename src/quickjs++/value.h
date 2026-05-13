@@ -7,7 +7,7 @@ namespace qjs
 {
     namespace detail
     {
-        template<typename Key> requires has_property_traits<std::decay_t<Key>>
+        template<typename Key>
         struct property_proxy
         {
             JSContext* ctx;
@@ -364,10 +364,10 @@ namespace qjs
         }
     };
 
-    template<typename Key> requires has_property_traits<std::decay_t<Key>>
+    template<typename Key>
     detail::property_proxy<Key>::operator value() const { return as<value>(); }
 
-    template<typename Key> requires has_property_traits<std::decay_t<Key>>
+    template<typename Key>
     value detail::property_proxy<Key>::eval_this(std::string_view buffer, const char* filename, int flags) const
     {
         return as<value>().eval_this(buffer, filename, flags);
