@@ -209,6 +209,12 @@ namespace qjs
         {
             return class_registrar<T>(name, context::get(m_ctx), this);
         }
+
+        template<typename E> requires std::is_enum_v<E>
+        enum_registrar<E> register_enum(const char* name)
+        {
+            return enum_registrar<E>(name, context::get(m_ctx), this);
+        }
     private:
         JSContext* m_ctx;
         JSModuleDef* m_def;
@@ -248,6 +254,56 @@ namespace qjs
                 std::meta::parameters_of(I) | std::views::transform(std::meta::type_of));
         }
     #endif
+    };
+
+    /** Helper class to register enum types. */
+    template<typename E, typename Class> requires std::is_enum_v<E>
+    class enum_registrar
+    {
+        template<typename T> requires std::is_class_v<T>
+        friend class class_registrar;
+    public:
+        enum_registrar(const char* name, context& context, module* module = nullptr)
+            : m_context(context), m_name(name), m_object(context.new_object()), m_parent(module) {}
+
+        enum_registrar(const char* name, context& context, value parent)
+            : m_context(context), m_name(name), m_object(context.new_object()), m_parent(std::move(parent)) {}
+
+        ~enum_registrar()
+        {
+            JS_PreventExtensions(m_context.ctx, m_object.v);
+            if (module** m = std::get_if<module*>(&m_parent); m && *m)
+                (*m)->add(m_name, std::move(m_object));
+            else if (class value* v = std::get_if<class value>(&m_parent))
+                (*v)[m_name] = std::move(m_object);
+            else
+                m_context.global()[m_name] = std::move(m_object);
+        }
+
+        /** Allows returning back to class_registrar when using enum_(). */
+        Class& end() requires (!std::same_as<Class, std::nullptr_t>)
+        {
+            return *m_class;
+        }
+
+        template<E V>
+        enum_registrar& value(const char* name)
+        {
+            using U = std::underlying_type_t<E>;
+            JS_DefinePropertyValueStr(
+                m_context.ctx,
+                m_object.v,
+                name,
+                js_traits<U>::wrap(m_context.ctx, static_cast<U>(V)),
+                JS_PROP_ENUMERABLE);
+            return *this;
+        }
+    private:
+        Class* m_class;
+        context& m_context;
+        const char* m_name;
+        class value m_object;
+        std::variant<module*, class value> m_parent;
     };
 
     /** Helper class to register class members and constructors.
@@ -305,7 +361,19 @@ namespace qjs
             JS_SetConstructor(m_context.ctx, m_ctor.v, m_prototype.v);
             if (m_module)
                 m_module->add(name, value(m_ctor));
+            else
+                m_context.global()[name] = value(m_ctor);
             return *this;
+        }
+
+        template<typename E> requires std::is_enum_v<E>
+        enum_registrar<E, class_registrar<T>> enum_(const char* name)
+        {
+            assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
+
+            enum_registrar<E, class_registrar<T>> reg(name, m_context, m_ctor);
+            reg.m_class = this;
+            return reg;
         }
 
         /** Add free function. */

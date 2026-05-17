@@ -33,6 +33,9 @@ class value;
 template<typename T> requires std::is_class_v<T>
 class class_registrar;
 
+template<typename E, typename Class = std::nullptr_t> requires std::is_enum_v<E>
+class enum_registrar;
+
 template<typename T>
 struct js_traits;
 

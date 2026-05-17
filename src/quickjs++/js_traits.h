@@ -272,16 +272,16 @@ namespace qjs
     template<typename Enum> requires std::is_enum_v<Enum>
     struct js_traits<Enum>
     {
-        using T = std::underlying_type_t<Enum>;
+        using U = std::underlying_type_t<Enum>;
 
         static Enum unwrap(JSContext* ctx, JSValueConst val)
         {
-            return static_cast<Enum>(js_traits<T>::unwrap(ctx, val));
+            return static_cast<Enum>(js_traits<U>::unwrap(ctx, val));
         }
 
         static JSValue wrap(JSContext* ctx, Enum val) noexcept
         {
-            return js_traits<T>::wrap(ctx, static_cast<T>(val));
+            return js_traits<U>::wrap(ctx, static_cast<U>(val));
         }
     };
 
