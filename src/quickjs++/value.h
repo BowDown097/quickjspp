@@ -135,10 +135,11 @@ namespace qjs
             v = JS_DupValue(ctx, val.v);
         }
 
-        value(value&& val) noexcept : ctx(nullptr)
+        value(value&& val) noexcept
+            : ctx(val.ctx), v(val.v)
         {
-            std::swap(ctx, val.ctx);
-            v = val.v;
+            val.ctx = nullptr;
+            val.v = JS_UNDEFINED;
         }
 
         ~value() noexcept
@@ -309,16 +310,14 @@ namespace qjs
             }
             else if (promiseState == JS_PROMISE_REJECTED)
             {
-                JSValue reason = JS_PromiseResult(ctx, v);
-                JS_Throw(ctx, JS_DupValue(ctx, reason));
+                JS_Throw(ctx, JS_PromiseResult(ctx, v));
                 throw exception(ctx);
             }
             else if (JS_IsAsyncFunction(v))
             {
-                // async functions will return a pending promise that we can immediately handle.
-                // JSValue is used here instead of ::value, otherwise the GC double frees it.
-                JSValue promise = as<std::function<JSValue(Args...)>>()(std::forward<Args>(args)...);
-                handle_pending_promise<R>(std::forward<F>(callback), ctx, promise);
+                // async functions will return a pending promise that we can immediately handle
+                value promise = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
+                handle_pending_promise<R>(std::forward<F>(callback), ctx, promise.v);
             }
             else if (JS_IsFunction(ctx, v))
             {

@@ -34,18 +34,20 @@ namespace qjs
             std::is_member_function_pointer_v<std::remove_reference_t<F>> ||
             requires { &std::remove_reference_t<F>::operator(); };
 
-        /** Slight optimization over JS_GetPropertyStr(ctx, this_obj, "prototype") with a constant atom. */
         inline JSValue get_property_prototype(JSContext* ctx, JSValueConst this_obj)
         {
-            static const JSAtom prop = JS_NewAtom(ctx, "prototype");
-            return JS_GetProperty(ctx, this_obj, prop);
+            JSAtom prop = JS_NewAtom(ctx, "prototype");
+            JSValue ret = JS_GetProperty(ctx, this_obj, prop);
+            JS_FreeAtom(ctx, prop);
+            return ret;
         }
 
-        /** Slight optimization over JS_Invoke(ctx, this_val, JS_NewAtom(ctx, "then"), 1, func) with a constant atom. */
-        inline void invoke_on_then(JSContext* ctx, JSValue this_val, JSValue* func)
+        inline void invoke_on_then(JSContext* ctx, JSValueConst this_val, JSValue* func)
         {
-            static const JSAtom atom = JS_NewAtom(ctx, "then");
-            JS_Invoke(ctx, this_val, atom, 1, func);
+            JSAtom atom = JS_NewAtom(ctx, "then");
+            JSValue ret = JS_Invoke(ctx, this_val, atom, 1, func);
+            JS_FreeAtom(ctx, atom);
+            JS_FreeValue(ctx, ret);
         }
 
         template<std::integral T, T Min, T Max> requires (Max >= Min)
