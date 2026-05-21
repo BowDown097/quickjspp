@@ -35,19 +35,13 @@ namespace qjs
         std::unordered_map<Key, Value> get_properties(JSContext* ctx, JSValueConst v)
         {
             if (!JS_IsObject(v))
-            {
-                JS_ThrowTypeError(ctx, "Value is not an object");
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_TYPE_ERROR, "Value is not an object");
 
             JSPropertyEnum* props;
             uint32_t length;
 
             if (JS_GetOwnPropertyNames(ctx, &props, &length, v, JS_GPN_STRING_MASK) != 0)
-            {
-                JS_ThrowInternalError(ctx, "Could not get properties of value");
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_INTERNAL_ERROR, "Could not get properties of value");
 
             std::unordered_map<Key, Value> result;
             result.reserve(length);
@@ -135,8 +129,7 @@ namespace qjs
 
         static JSValue wrap(JSContext* ctx, JSValueConst val)
         {
-            JS_ThrowTypeError(ctx, "Can't wrap a void value");
-            throw exception(ctx);
+            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap a void value");
         }
     };
 
@@ -229,10 +222,7 @@ namespace qjs
                 throw exception(ctx);
 
             if (!std::in_range<Integer>(result))
-            {
-                JS_ThrowRangeError(ctx, "Could not unwrap integer into %s", qjs_nameof<Integer>());
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_RANGE_ERROR, "Could not unrap integer into %s", qjs_nameof<Integer>());
 
             return static_cast<Integer>(result);
         }
@@ -241,11 +231,7 @@ namespace qjs
         inline static JSValue wrap_integer(JSContext* ctx, Integer val)
         {
             if (!std::in_range<R>(val))
-            {
-                JS_ThrowRangeError(ctx, "Could not wrap integer into %s", qjs_nameof<R>());
-                throw exception(ctx);
-            }
-
+                throw exception(ctx, JS_RANGE_ERROR, "Could not wrap integer into %s", qjs_nameof<R>());
             return F(ctx, static_cast<R>(val));
         }
     };
@@ -294,14 +280,14 @@ namespace qjs
             int64_t length;
             if (JS_GetLength(ctx, val, &length) != 0)
             {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", qjs_nameof<std::pair<U, V>>());
-                throw exception(ctx);
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "js_traits<%s>::unwrap expects array", qjs_nameof<std::pair<U, V>>());
             }
             if (length != 2)
             {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expected array of length 2, got %" PRId64,
-                                  qjs_nameof<std::pair<U, V>>(), length);
-                throw exception(ctx);
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "js_traits<%s>::unwrap expected array of length 2, got %" PRId64,
+                    qjs_nameof<std::pair<U, V>>(), length);
             }
 
             return std::make_pair(
@@ -376,10 +362,9 @@ namespace qjs
                     return result.value();
                 if (auto result = unwrap_tagged(ctx, val))
                     return result.value();
-                JS_ThrowTypeError(
-                    ctx, "Expected type %s, got object with classid %u",
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "Expected type %s, got object with classid %u",
                     qjs_nameof<std::variant<Ts...>>(), JS_GetClassID(val));
-                throw exception(ctx);
             case JS_TAG_INT:
             case JS_TAG_BIG_INT:
                 return unwrap_priority<std::is_arithmetic>(ctx, val);
@@ -390,8 +375,8 @@ namespace qjs
             if (tag >= JS_TAG_FLOAT64) // any larger tag is FLOAT64 if JS_NAN_BOXING
                 return unwrap_priority<std::is_floating_point>(ctx, val);
 
-            JS_ThrowTypeError(ctx, "Expected type %s, got tag %d", qjs_nameof<std::variant<Ts...>>(), tag);
-            throw exception(ctx);
+            throw exception(ctx, JS_TYPE_ERROR,
+                "Expected type %s, got tag %d", qjs_nameof<std::variant<Ts...>>(), tag);
         }
 
         static JSValue wrap(JSContext* ctx, std::variant<Ts...> val) noexcept
@@ -533,14 +518,9 @@ namespace qjs
                 return result.value();
 
             if constexpr (sizeof...(Traits) > 0)
-            {
                 return unwrap_priority<Traits...>(ctx, val);
-            }
             else
-            {
-                JS_ThrowTypeError(ctx, "Expected type %s", qjs_nameof<std::variant<Ts...>>());
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_TYPE_ERROR, "Expected type %s", qjs_nameof<std::variant<Ts...>>());
         }
 
         template<typename T, auto F>
@@ -570,9 +550,9 @@ namespace qjs
                 if (strcmp(name, typeName.v) == 0)
                     return unwrapper(ctx, val);
 
-            JS_ThrowTypeError(ctx, "Tagged type '%s' given, but was not found in %s",
+            throw exception(ctx, JS_TYPE_ERROR,
+                "Tagged type '%s' given, but was not found in %s",
                 typeName.v, qjs_nameof<std::variant<Ts...>>());
-            throw qjs::exception(ctx);
         }
     };
 
@@ -587,10 +567,7 @@ namespace qjs
         {
             int64_t length;
             if (!JS_IsArray(val) || JS_GetLength(ctx, val, &length) != 0)
-            {
-                JS_ThrowTypeError(ctx, "js_traits<%s>::unwrap expects array", qjs_nameof<Range>());
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_TYPE_ERROR, "js_traits<%s>::unwrap expects array", qjs_nameof<Range>());
 
             auto transform = [&](int64_t i) { return detail::unwrap_free<value_type>(ctx, JS_GetPropertyInt64(ctx, val, i)); };
         #ifdef __cpp_lib_ranges_to_container
@@ -652,8 +629,7 @@ namespace qjs
     {
         static fwrapper<Function, PassThis> unwrap(JSContext* ctx, JSValueConst val)
         {
-            JS_ThrowTypeError(ctx, "Can't unwrap function wrapper");
-            throw exception(ctx);
+            throw exception(ctx, JS_TYPE_ERROR, "Can't unwrap fwrapper");
         }
 
         static JSValue wrap(JSContext* ctx, fwrapper<Function, PassThis> val) noexcept
@@ -707,8 +683,7 @@ namespace qjs
 
         static JSValue wrap(JSContext* ctx, std::function<R(Args...)>&& val)
         {
-            JS_ThrowTypeError(ctx, "Can't wrap std::function");
-            throw exception(ctx);
+            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap std::function");
         }
     };
 
@@ -718,8 +693,7 @@ namespace qjs
     {
         static ctor_wrapper<T, Args...> unwrap(JSContext* ctx, JSValueConst val)
         {
-            JS_ThrowTypeError(ctx, "Can't wrap constructor wrapper");
-            throw exception(ctx);
+            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap ctor_wrapper");
         }
 
         static JSValue wrap(JSContext* ctx, ctor_wrapper<T, Args...> val) noexcept
@@ -886,10 +860,7 @@ namespace qjs
                 };
 
                 if (JS_NewClass(rt, qjs_class_id, &class_def) < 0)
-                {
-                    JS_ThrowInternalError(ctx, "Could not register class %s", name);
-                    throw exception(ctx);
-                }
+                    throw exception(ctx, JS_INTERNAL_ERROR, "Could not register %s", name);
             }
 
             JS_SetClassProto(ctx, qjs_class_id, proto);
@@ -912,15 +883,12 @@ namespace qjs
             }
             else // none of the above
             {
-                JS_ThrowTypeError(ctx, "Expected type %s, got object with class ID %u", qjs_nameof<T>(), class_id);
-                throw exception(ctx);
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "Expected type %s, got object with class ID %u", qjs_nameof<T>(), class_id);
             }
 
             if (!ptr)
-            {
-                JS_ThrowInternalError(ctx, "Object's opaque pointer is null");
-                throw exception(ctx);
-            }
+                throw exception(ctx, JS_INTERNAL_ERROR, "Object's opaque pointer is null");
 
             return ptr;
         }

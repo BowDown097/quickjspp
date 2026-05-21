@@ -333,8 +333,7 @@ namespace qjs
             }
             else
             {
-                JS_ThrowTypeError(ctx, "Value is not callable");
-                throw exception(ctx);
+                throw exception(ctx, JS_TYPE_ERROR, "Value is not callable");
             }
         }
 

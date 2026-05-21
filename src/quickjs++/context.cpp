@@ -93,10 +93,7 @@ namespace qjs
     {
         std::optional<std::string> data = detail::read_file(filename);
         if (!data)
-        {
-            JS_ThrowPlainError(ctx, "Can't read file: %s", filename);
-            throw exception(ctx);
-        }
+            throw exception(ctx, JS_PLAIN_ERROR, "Can't read file: %s", filename);
 
         return eval(data.value(), filename, flags);
     }

@@ -13,11 +13,7 @@ namespace qjs
             static auto unwrap(JSContext* ctx, int argc, JSValueConst* argv)
             {
                 if (argc <= I)
-                {
-                    JS_ThrowTypeError(ctx, "Expected at least %zu arguments but received %d", NArgs, argc);
-                    throw exception(ctx);
-                }
-
+                    throw exception(ctx, JS_TYPE_ERROR, "Expected at least %zu arguments but received %d", NArgs, argc);
                 return js_traits<T>::unwrap(ctx, argv[I]);
             }
         };

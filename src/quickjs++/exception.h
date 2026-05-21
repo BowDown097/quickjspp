@@ -2,6 +2,17 @@
 #include "quickjs_fwd.h"
 #include <source_location>
 
+/** Basic reimplementation of the private JSErrorEnum with publicly exposed error types. */
+enum JSErrorEnum
+{
+    JS_INTERNAL_ERROR,
+    JS_PLAIN_ERROR,
+    JS_RANGE_ERROR,
+    JS_REFERENCE_ERROR,
+    JS_SYNTAX_ERROR,
+    JS_TYPE_ERROR
+};
+
 namespace qjs
 {
     /** Exception type.
@@ -10,8 +21,8 @@ namespace qjs
     class exception
     {
     public:
-        explicit exception(JSContext* ctx, std::source_location loc = std::source_location::current()) noexcept
-            : m_ctx(ctx), m_location(loc) {}
+        explicit exception(JSContext* ctx) noexcept : m_ctx(ctx) {}
+        exception(JSContext* ctx, JSErrorEnum error, const char* fmt, ...) noexcept;
 
         /** Get the associated context. */
         context& get_context() const;
@@ -23,6 +34,6 @@ namespace qjs
         const std::source_location& location() const noexcept;
     private:
         JSContext* m_ctx;
-        std::source_location m_location;
+        std::source_location m_location = std::source_location::current();
     };
 }
