@@ -43,18 +43,27 @@ namespace qjs
                 std::decay_t<std::tuple_element_t<Is, Tuple>>, Is - Offset, sizeof...(Is)>::unwrap(ctx, argc, argv)...);
         }
 
-        template <typename Tuple, std::size_t TupleOffset = 0>
+        template <typename Tuple, std::size_t Begin = 0>
         auto unwrap_args(JSContext* ctx, int argc, JSValueConst* argv)
         {
-            constexpr std::size_t TupleSize = std::tuple_size_v<Tuple>;
-            if constexpr (TupleOffset >= TupleSize)
+        #define DO_UNWRAP(Off) \
+            unwrap_args_impl<Tuple, Off>(ctx, argc, argv, detail::make_index_range<Off, TupleSize - 1>())
+
+            static constexpr std::size_t TupleSize = std::tuple_size_v<Tuple>;
+            if constexpr (Begin >= TupleSize)
             {
                 return std::tuple<>();
             }
+            else if constexpr (std::is_same_v<std::tuple_element_t<Begin, Tuple>, JSContext*>)
+            {
+                if constexpr (TupleSize == Begin + 1)
+                    return std::make_tuple(ctx);
+                else
+                    return std::tuple_cat(std::make_tuple(ctx), DO_UNWRAP(Begin + 1));
+            }
             else
             {
-                return unwrap_args_impl<Tuple, TupleOffset>(ctx, argc, argv,
-                    detail::make_index_range<TupleOffset, TupleSize - 1>());
+                return DO_UNWRAP(Begin);
             }
         }
 
@@ -132,7 +141,13 @@ namespace qjs
         void wrap_args(JSContext* ctx, JSValue* argv, Args&&... args)
         {
             std::size_t i = 0;
-            ((argv[i++] = js_traits<std::decay_t<Args>>::wrap(ctx, std::forward<Args>(args))), ...);
+            (
+                [&] {
+                    if constexpr (!std::is_same_v<Args, JSContext*>)
+                        argv[i++] = js_traits<std::decay_t<Args>>::wrap(ctx, std::forward<Args>(args));
+                }(),
+                ...
+            );
         }
     }
 }
