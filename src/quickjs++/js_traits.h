@@ -12,25 +12,6 @@ namespace qjs
 {
     namespace detail
     {
-        /** Immutable view over a QuickJS string which frees the string on destruction. */
-        class jsstring_view : public std::string_view
-        {
-        public:
-            jsstring_view(JSContext* ctx, const char* data, std::size_t len)
-                : std::string_view(data, len), m_ctx(ctx) {}
-            jsstring_view(const jsstring_view&) = delete;
-
-            ~jsstring_view()
-            {
-                if (m_ctx)
-                    JS_FreeCString(m_ctx, data());
-            }
-
-            operator const char*() const { return data(); }
-        private:
-            JSContext* m_ctx;
-        };
-
         template<typename Key, typename Value>
         std::unordered_map<Key, Value> get_properties(JSContext* ctx, JSValueConst v)
         {
