@@ -3,6 +3,7 @@
 #include <cinttypes>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <unordered_map>
 #include <utility>
@@ -551,12 +552,7 @@ namespace qjs
                 throw exception(ctx, JS_TYPE_ERROR, "js_traits<%s>::unwrap expects array", qjs_nameof<Range>());
 
             auto transform = [&](int64_t i) { return detail::unwrap_free<value_type>(ctx, JS_GetPropertyInt64(ctx, val, i)); };
-        #ifdef __cpp_lib_ranges_to_container
-            return std::views::iota(0LL, length) | std::views::transform(transform) | std::ranges::to<Range>();
-        #else
-            auto range = std::views::iota(0LL, length) | std::views::transform(transform) | std::views::common;
-            return Range(std::ranges::begin(range), std::ranges::end(range));
-        #endif
+            return detail::make_from_range<Range>(std::views::iota(0LL, length) | std::views::transform(transform));
         }
 
         static JSValue wrap(JSContext* ctx, const Range& val)
@@ -579,13 +575,7 @@ namespace qjs
         {
             using K = std::remove_const_t<typename value_type::first_type>;
             using V = value_type::second_type;
-
-            std::unordered_map<K, V> props = detail::get_properties<K, V>(ctx, val);
-        #ifdef __cpp_lib_ranges_to_container
-            return std::ranges::to<Range>(props);
-        #else
-            return Range(props.begin(), props.end());
-        #endif
+            return detail::make_from_range<Range>(detail::get_properties<K, V>(ctx, val));
         }
 
         static JSValue wrap(JSContext* ctx, const Range& val)

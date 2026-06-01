@@ -64,6 +64,33 @@ namespace qjs
             return make_integer_range<std::size_t, Min, Max>();
         }
 
+        /** Helper function to essentially convert between ranges. */
+        template<typename C, std::ranges::input_range R> requires (!std::ranges::view<C>)
+        C make_from_range(R&& r)
+        {
+        #ifdef __cpp_lib_ranges_to_container
+            return std::ranges::to<C>(std::forward<R>(r));
+        #else
+            if constexpr (std::constructible_from<C, std::ranges::iterator_t<R>, std::ranges::sentinel_t<R>>)
+            {
+                return C(std::ranges::begin(r), std::ranges::end(r));
+            }
+            else if constexpr (requires(C& c) { c.push_back(std::declval<std::ranges::range_value_t<R>>()); })
+            {
+                C c;
+                if constexpr (std::ranges::sized_range<R> && requires(C& c, std::ranges::range_size_t<C> n) { c.reserve(n); })
+                    c.reserve(static_cast<std::ranges::range_size_t<C>>(std::ranges::size(r)));
+                for (auto it = std::ranges::begin(r); it != std::ranges::end(r); ++it)
+                    c.push_back(*it);
+                return c;
+            }
+            else
+            {
+                static_assert(sizeof(C) == 0, "Cannot create container from this range");
+            }
+        #endif
+        }
+
         /** Helper function to convert and then free JSValue. */
         template<typename T>
         T unwrap_free(JSContext* ctx, JSValueConst val)
