@@ -1,6 +1,7 @@
 #pragma once
 #include "quickjs_fwd.h"
 #include <source_location>
+#include <utility>
 
 /** Basic reimplementation of the private JSErrorEnum with publicly exposed error types. */
 enum JSErrorEnum
@@ -21,8 +22,12 @@ namespace qjs
     class exception
     {
     public:
-        explicit exception(JSContext* ctx) noexcept : m_ctx(ctx) {}
-        exception(JSContext* ctx, JSErrorEnum error, const char* fmt, ...) noexcept;
+        explicit exception(JSContext* ctx, std::source_location loc = std::source_location::current()) noexcept
+            : m_ctx(ctx), m_location(loc) {}
+
+        template<typename... Args>
+        exception(JSContext* ctx, JSErrorEnum error, const char* fmt, Args&&... args)
+            : exception(ctx, error, std::source_location::current(), fmt, std::forward<Args>(args)...) {}
 
         /** Get the associated context. */
         context& get_context() const;
@@ -34,6 +39,8 @@ namespace qjs
         const std::source_location& location() const noexcept;
     private:
         JSContext* m_ctx;
-        std::source_location m_location = std::source_location::current();
+        std::source_location m_location;
+
+        exception(JSContext* ctx, JSErrorEnum error, std::source_location loc, const char* fmt, ...);
     };
 }

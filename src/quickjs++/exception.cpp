@@ -4,8 +4,8 @@
 
 namespace qjs
 {
-    exception::exception(JSContext* ctx, JSErrorEnum error, const char* fmt, ...) noexcept
-        : m_ctx(ctx)
+    exception::exception(JSContext* ctx, JSErrorEnum error, std::source_location loc, const char* fmt, ...)
+        : m_ctx(ctx), m_location(loc)
     {
         va_list args;
         va_start(args, fmt);
