@@ -45,10 +45,14 @@ namespace qjs
         explicit context(runtime& rt);
         explicit context(JSRuntime* rt);
         explicit context(JSContext* ctx);
-        ~context();
 
         context(const context&) = delete;
-        context(context&&) = default;
+        context& operator=(const context&) = delete;
+
+        context(context&&) noexcept;
+        context& operator=(context&& other) noexcept;
+
+        ~context();
 
         template<typename Function>
         void enqueue_job(Function&& job)
@@ -137,6 +141,7 @@ namespace qjs
         std::vector<module> m_modules;
 
         void init();
+        void reset();
     };
 
     /** Module wrapper
@@ -299,7 +304,7 @@ namespace qjs
             return *this;
         }
     private:
-        Class* m_class;
+        Class* m_class{};
         context& m_context;
         const char* m_name;
         class value m_object;

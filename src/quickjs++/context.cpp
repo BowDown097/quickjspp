@@ -50,15 +50,38 @@ namespace qjs
         init();
     }
 
+    context::context(context&& other) noexcept
+        : ctx(other.ctx),
+          module_loader(std::move(other.module_loader)),
+          on_unhandled_promise_rejection(std::move(other.on_unhandled_promise_rejection)),
+          m_modules(std::move(other.m_modules))
+    {
+        other.ctx = nullptr;
+        init();
+    }
+
+    context& context::operator=(context&& other) noexcept
+    {
+        if (this != &other)
+        {
+            reset();
+
+            ctx = other.ctx;
+            other.ctx = nullptr;
+
+            module_loader = std::move(other.module_loader);
+            on_unhandled_promise_rejection = std::move(other.on_unhandled_promise_rejection);
+            m_modules = std::move(other.m_modules);
+
+            init();
+        }
+
+        return *this;
+    }
+
     context::~context()
     {
-        // We need to run the GC to flush finalization of any pending unhandled
-        // rejected promises before we free the context, as they depend on it's
-        // opaque value.
-        JS_RunGC(JS_GetRuntime(ctx));
-
-        m_modules.clear();
-        JS_FreeContext(ctx);
+        reset();
     }
 
     module& context::add_module(const char* name)
@@ -111,6 +134,20 @@ namespace qjs
     void context::init()
     {
         JS_SetContextOpaque(ctx, this);
+    }
+
+    void context::reset()
+    {
+        if (!ctx)
+            return;
+
+        // We need to run the GC to flush finalization of any pending unhandled
+        // rejected promises before we free the context, as they depend on it's
+        // opaque value.
+        JS_RunGC(JS_GetRuntime(ctx));
+
+        m_modules.clear();
+        JS_FreeContext(ctx);
     }
 
     module::module(JSContext* ctx, const char* name)
