@@ -267,14 +267,27 @@ namespace qjs
             return value(ctx, JS_EvalThis(ctx, v, buffer.data(), buffer.size(), filename, flags));
         }
 
-        /** Invoke the stored value if it is a callable object or Promise.
+        /**
+         *  "Invokes" a stored Promise, async function, or regular function,
+         *  forwarding the result, if any, to the given callback.
          *
-         *  If the value is a callable object, it is invoked with the provided arguments.
-         *  If the value is a Promise, it is awaited.
-         *  Once the operation completes, the given callback is invoked with the result, if any.
+         *  1. If the value is a Promise:
+         *      - If pending: registers a '.then' handler which invokes the callback with the result.
+         *      - If fulfilled: immediately invokes the callback with the result.
+         *      - If rejected: throws a qjs::exception with the resultant error.
          *
-         *  @param callback Function to be called once the operation finishes with the result, if any.
-         *  @param args Arguments to pass to the callable object (ignored for Promises).
+         *  2. If the value is an async function:
+         *      - It is initially invoked with the provided arguments.
+         *      - The resulting Promise is handled as in (1).
+         *
+         *  3. If the value is a regular function:
+         *      - It is invoked normally, with the result being forwarded to the callback.
+         *
+         *  4. Otherwise:
+         *      - Throws a qjs::exception with a type error.
+         *
+         *  @param callback Function called when a result is available.
+         *  @param args Arguments forwarded to a stored async or regular function.
          */
         template<typename F, typename... Args>
         void invoke_then(F&& callback, Args&&... args) const
