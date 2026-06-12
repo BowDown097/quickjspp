@@ -1,9 +1,9 @@
 #pragma once
 #include "quickjs_fwd.h"
+#include <nameof.hpp>
 #include <quickjs.h>
 #include <vector>
 
-#include <nameof.hpp>
 template<typename T>
 [[nodiscard]] constexpr const char* qjs_nameof() noexcept { return ::nameof::nameof_type<T>().data(); }
 
@@ -33,36 +33,6 @@ namespace qjs
             std::is_function_v<std::remove_pointer_t<std::decay_t<F>>> ||
             std::is_member_function_pointer_v<std::remove_reference_t<F>> ||
             requires { &std::remove_reference_t<F>::operator(); };
-
-        inline JSValue get_property_prototype(JSContext* ctx, JSValueConst this_obj)
-        {
-            JSAtom prop = JS_NewAtom(ctx, "prototype");
-            JSValue ret = JS_GetProperty(ctx, this_obj, prop);
-            JS_FreeAtom(ctx, prop);
-            return ret;
-        }
-
-        inline void invoke_on_then(JSContext* ctx, JSValueConst this_val, JSValue* func)
-        {
-            JSAtom atom = JS_NewAtom(ctx, "then");
-            JSValue ret = JS_Invoke(ctx, this_val, atom, 1, func);
-            JS_FreeAtom(ctx, atom);
-            JS_FreeValue(ctx, ret);
-        }
-
-        template<std::integral T, T Min, T Max> requires (Max >= Min)
-        constexpr auto make_integer_range()
-        {
-            return []<T... Is>(std::integer_sequence<T, Is...>) {
-                return std::integer_sequence<T, Is + Min...>{};
-            }(std::make_integer_sequence<T, Max - Min + 1>{});
-        }
-
-        template<std::size_t Min, std::size_t Max> requires (Max >= Min)
-        constexpr auto make_index_range()
-        {
-            return make_integer_range<std::size_t, Min, Max>();
-        }
 
         /** Helper function to essentially convert between ranges. */
         template<typename C, std::ranges::input_range R> requires (!std::ranges::view<C>)

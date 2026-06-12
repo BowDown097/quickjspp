@@ -112,9 +112,9 @@ namespace qjs
         /** Creates a JS value converted from a C++ object. context::new_value is preferred. */
         template<typename T>
             requires (!std::same_as<T, JSValue> && has_js_traits<std::decay_t<T>>)
-        value(JSContext* ctx, T&& val) : ctx(ctx)
+        value(JSContext* ctx, T&& val)
+            : ctx(ctx), v(js_traits<std::decay_t<T>>::wrap(ctx, std::forward<T>(val)))
         {
-            v = js_traits<std::decay_t<T>>::wrap(ctx, std::forward<T>(val));
             if (JS_IsException(v))
                 throw exception(ctx);
         }
@@ -357,8 +357,13 @@ namespace qjs
                 delete static_cast<std::decay_t<F>*>(p);
             };
 
-            value then(ctx, JS_NewCClosure(ctx, closure, nullptr, finalizer, 0, 0, cbptr));
-            detail::invoke_on_then(ctx, v, &then.v);
+            JSValue then = JS_NewCClosure(ctx, closure, nullptr, finalizer, 0, 0, cbptr);
+            JSAtom atom = JS_NewAtom(ctx, "then");
+            JSValue ret = JS_Invoke(ctx, v, atom, 1, &then);
+
+            JS_FreeAtom(ctx, atom);
+            JS_FreeValue(ctx, ret);
+            JS_FreeValue(ctx, then);
         }
     };
 

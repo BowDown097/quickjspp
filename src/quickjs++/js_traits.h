@@ -670,7 +670,7 @@ namespace qjs
         static JSValue wrap(JSContext* ctx, ctor_wrapper<T, Args...> val) noexcept
         {
             return JS_NewCFunction2(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) noexcept -> JSValue {
-                JSValue proto = detail::get_property_prototype(ctx, this_val);
+                JSValue proto = JS_GetPropertyStr(ctx, this_val, "prototype");
                 if (JS_IsException(proto))
                     return proto;
 
