@@ -4,8 +4,30 @@
 #include <quickjs.h>
 #include <vector>
 
+template<auto V> inline constexpr auto _qjs_enum_name_storage = ::nameof::nameof_enum<V>();
+template<auto M> inline constexpr auto _qjs_member_name_storage = ::nameof::nameof_member<M>();
+template<auto V> inline constexpr auto _qjs_pointer_name_storage = ::nameof::nameof_pointer<V>();
+template<typename T> inline constexpr auto _qjs_short_name_storage = ::nameof::nameof_short_type<T>();
+
 template<typename T>
-[[nodiscard]] constexpr const char* qjs_nameof() noexcept { return ::nameof::nameof_type<T>().data(); }
+[[nodiscard]] consteval const char* qjs_nameof() noexcept
+{ return ::nameof::nameof_type<T>().data(); }
+
+template<auto V> requires std::is_enum_v<decltype(V)>
+[[nodiscard]] consteval const char* qjs_nameof_enum() noexcept
+{ return _qjs_enum_name_storage<V>.data(); }
+
+template<auto M> requires std::is_member_pointer_v<decltype(M)>
+[[nodiscard]] consteval const char* qjs_nameof_member() noexcept
+{ return _qjs_member_name_storage<M>.data(); }
+
+template<auto V> requires std::is_pointer_v<decltype(V)>
+[[nodiscard]] consteval const char* qjs_nameof_pointer() noexcept
+{ return _qjs_pointer_name_storage<V>.data(); }
+
+template<typename T>
+[[nodiscard]] consteval const char* qjs_short_nameof() noexcept
+{ return _qjs_short_name_storage<T>.data(); }
 
 namespace qjs
 {

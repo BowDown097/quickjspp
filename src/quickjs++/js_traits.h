@@ -797,12 +797,9 @@ namespace qjs
          *  @throws exception
          */
         static void register_class(
-            JSContext* ctx, const char* name = nullptr, JSValue proto = JS_NULL,
+            JSContext* ctx, const char* name = qjs_short_nameof<T>(), JSValue proto = JS_NULL,
             JSClassCall* call = nullptr, JSClassExoticMethods* exotic = nullptr)
         {
-            if (!name || name[0] == '\0')
-                name = qjs_nameof<T>();
-
             JSRuntime* rt = JS_GetRuntime(ctx);
             if (!is_registered())
                 JS_NewClassID(rt, &qjs_class_id);

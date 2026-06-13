@@ -122,7 +122,7 @@ namespace qjs
          *  @param proto JS class prototype or JS_UNDEFINED. Can be created with class_registrar.
         */
         template <typename T> requires std::is_class_v<T>
-        void register_class(const char* name, JSValue proto = JS_NULL)
+        void register_class(const char* name = qjs_short_nameof<T>(), JSValue proto = JS_NULL)
         {
             js_traits<std::shared_ptr<T>>::register_class(ctx, name, proto);
         }
@@ -168,13 +168,10 @@ namespace qjs
 
     #ifdef __cpp_impl_reflection
         template<typename T> requires std::is_class_v<T>
-        class_registrar<T> reflect_class(const char* name = "")
+        class_registrar<T> reflect_class(const char* name = qjs_short_nameof<T>())
         {
             constexpr auto acctx = std::meta::access_context::current();
             constexpr auto members = std::define_static_array(std::meta::members_of(^^T, acctx));
-
-            if (!name || name[0] == '\0')
-                name = qjs_nameof<T>();
 
             class_registrar<T> reg(name, context::get(m_ctx), this);
 
@@ -210,13 +207,13 @@ namespace qjs
     #endif
 
         template<typename T> requires std::is_class_v<T>
-        class_registrar<T> register_class(const char* name)
+        class_registrar<T> register_class(const char* name = qjs_short_nameof<T>())
         {
             return class_registrar<T>(name, context::get(m_ctx), this);
         }
 
         template<typename E> requires std::is_enum_v<E>
-        enum_registrar<E> register_enum(const char* name)
+        enum_registrar<E> register_enum(const char* name = qjs_short_nameof<E>())
         {
             return enum_registrar<E>(name, context::get(m_ctx), this);
         }
@@ -262,7 +259,7 @@ namespace qjs
     };
 
     /** Helper class to register enum types. */
-    template<typename E, typename Class> requires std::is_enum_v<E>
+    template<typename E, typename Class /* = std::nullptr_t */> requires std::is_enum_v<E>
     class enum_registrar
     {
         template<typename T> requires std::is_class_v<T>
@@ -273,6 +270,12 @@ namespace qjs
 
         enum_registrar(const char* name, context& context, value parent)
             : m_context(context), m_name(name), m_object(context.new_object()), m_parent(std::move(parent)) {}
+
+        explicit enum_registrar(context& context, module* module = nullptr)
+            : enum_registrar(qjs_short_nameof<E>(), context, module) {}
+
+        enum_registrar(context& context, value parent)
+            : enum_registrar(qjs_short_nameof<E>(), context, std::move(parent)) {}
 
         ~enum_registrar()
         {
@@ -292,7 +295,7 @@ namespace qjs
         }
 
         template<E V>
-        enum_registrar& value(const char* name)
+        enum_registrar& value(const char* name = qjs_nameof_enum<V>())
         {
             using U = std::underlying_type_t<E>;
             JS_DefinePropertyValueStr(
@@ -325,6 +328,9 @@ namespace qjs
               m_module(module),
               m_name(name),
               m_prototype(context.new_object()) {}
+
+        explicit class_registrar(context& context, module* module = nullptr)
+            : class_registrar(qjs_short_nameof<T>(), context, module) {}
 
         class_registrar(const class_registrar&) = delete;
         class_registrar(class_registrar&&) = default;
@@ -360,19 +366,22 @@ namespace qjs
         template<typename... Args> requires std::constructible_from<T, Args...>
         class_registrar& constructor(const char* name = nullptr)
         {
-            if (!name)
+            if (!name || name[0] == '\0')
                 name = m_name;
+
             m_ctor = m_context.new_value(ctor_wrapper<T, Args...> { name });
             JS_SetConstructor(m_context.ctx, m_ctor.v, m_prototype.v);
+
             if (m_module)
                 m_module->add(name, value(m_ctor));
             else
                 m_context.global()[name] = value(m_ctor);
+
             return *this;
         }
 
         template<typename E> requires std::is_enum_v<E>
-        enum_registrar<E, class_registrar<T>> enum_(const char* name)
+        enum_registrar<E, class_registrar<T>> enum_(const char* name = qjs_short_nameof<E>())
         {
             assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
 
@@ -408,7 +417,7 @@ namespace qjs
          *  module.register_class<T>("T").member<&T::var>("var").member<&T::func>("func");
          */
         template<auto M> requires std::is_member_pointer_v<decltype(M)>
-        class_registrar& member(const char* name)
+        class_registrar& member(const char* name = qjs_nameof_member<M>())
         {
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);
             m_prototype.add_member<M>(name);
@@ -437,7 +446,7 @@ namespace qjs
          *  module.register_class<T>("T").constructor<>("T").static_member<&T::var>("var").static_member<&T::func>("func");
          */
         template<auto M> requires std::is_pointer_v<decltype(M)>
-        class_registrar& static_member(const char* name)
+        class_registrar& static_member(const char* name = qjs_nameof_pointer<M>())
         {
             assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);

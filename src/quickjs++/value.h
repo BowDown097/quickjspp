@@ -233,8 +233,16 @@ namespace qjs
 
         // add<&T::member>("member"); OR add<&T::static_member>("static_member");
         template<auto M> requires (std::is_member_pointer_v<decltype(M)> || std::is_pointer_v<decltype(M)>)
-        value& add_member(const char* name)
+        value& add_member(const char* name = nullptr)
         {
+            if (!name || name[0] == '\0')
+            {
+                if constexpr (std::is_member_pointer_v<decltype(M)>)
+                    name = qjs_nameof_member<M>();
+                else
+                    name = qjs_nameof_pointer<M>();
+            }
+
             constexpr bool is_membfunc = std::is_member_function_pointer_v<decltype(M)>;
             if constexpr (std::is_function_v<std::remove_pointer_t<decltype(M)>> || is_membfunc)
             {
