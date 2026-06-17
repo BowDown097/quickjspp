@@ -570,26 +570,24 @@ namespace qjs
     struct js_traits<Range>
     {
         using value_type = std::ranges::range_value_t<Range>;
+        using key_type = std::remove_const_t<typename value_type::first_type>;
+        using mapped_type = value_type::second_type;
 
         static Range unwrap(JSContext* ctx, JSValueConst val)
         {
-            using K = std::remove_const_t<typename value_type::first_type>;
-            using V = value_type::second_type;
-            return detail::make_from_range<Range>(detail::get_properties<K, V>(ctx, val));
+            return detail::make_from_range<Range>(detail::get_properties<key_type, mapped_type>(ctx, val));
         }
 
         static JSValue wrap(JSContext* ctx, const Range& val)
         {
-            using K = std::remove_const_t<typename value_type::first_type>;
-            using V = value_type::second_type;
-
             JSValue result = JS_NewObject(ctx);
+
             for (auto it = std::ranges::begin(val); it != std::ranges::end(val); ++it)
             {
-                JSValue wrapped = js_traits<V>::wrap(ctx, it->second);
-                property_traits<K>::set(ctx, result, it->first, wrapped);
-                JS_FreeValue(ctx, wrapped);
+                JSValue wrapped = js_traits<mapped_type>::wrap(ctx, it->second);
+                property_traits<key_type>::set(ctx, result, it->first, wrapped);
             }
+
             return result;
         }
     };
