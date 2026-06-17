@@ -20,12 +20,28 @@ namespace qjs
     {
         static JSValue get(JSContext* ctx, JSValue this_obj, std::string_view name) noexcept
         {
-            return JS_GetPropertyStr(ctx, this_obj, name.data());
+            JSAtom atom = JS_NewAtomLen(ctx, name.data(), name.size());
+            if (atom == JS_ATOM_NULL)
+                return JS_EXCEPTION;
+
+            JSValue ret = JS_GetProperty(ctx, this_obj, atom);
+            JS_FreeAtom(ctx, atom);
+            return ret;
         }
 
         static void set(JSContext* ctx, JSValue this_obj, std::string_view name, JSValue val)
         {
-            if (JS_SetPropertyStr(ctx, this_obj, name.data(), val) < 0)
+            JSAtom atom = JS_NewAtomLen(ctx, name.data(), name.size());
+            if (atom == JS_ATOM_NULL)
+            {
+                JS_FreeValue(ctx, val);
+                throw exception(ctx);
+            }
+
+            int res = JS_SetProperty(ctx, this_obj, atom, val);
+            JS_FreeAtom(ctx, atom);
+
+            if (res < 0)
                 throw exception(ctx);
         }
     };
