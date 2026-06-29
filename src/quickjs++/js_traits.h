@@ -13,27 +13,41 @@ namespace qjs
 {
     namespace detail
     {
+        struct property_list
+        {
+            JSContext* ctx{};
+            JSPropertyEnum* props{};
+            uint32_t length{};
+
+            ~property_list()
+            {
+                if (props)
+                {
+                    for (uint32_t i = 0; i < length; ++i)
+                        JS_FreeAtom(ctx, props[i].atom);
+                    js_free(ctx, props);
+                }
+            }
+        };
+
         template<typename Key, typename Value>
         std::unordered_map<Key, Value> get_properties(JSContext* ctx, JSValueConst v)
         {
             if (!JS_IsObject(v))
                 throw exception(ctx, JS_TYPE_ERROR, "Value is not an object");
 
-            JSPropertyEnum* props;
-            uint32_t length;
-
-            if (JS_GetOwnPropertyNames(ctx, &props, &length, v, JS_GPN_STRING_MASK) != 0)
+            property_list list{ctx};
+            if (JS_GetOwnPropertyNames(ctx, &list.props, &list.length, v, JS_GPN_STRING_MASK) != 0)
                 throw exception(ctx, JS_INTERNAL_ERROR, "Could not get properties of value");
 
             std::unordered_map<Key, Value> result;
-            result.reserve(length);
+            result.reserve(list.length);
 
-            for (uint32_t i = 0; i < length; ++i)
+            for (uint32_t i = 0; i < list.length; ++i)
             {
-                JSValue key = JS_AtomToValue(ctx, props[i].atom);
-                JSValue value = JS_GetProperty(ctx, v, props[i].atom);
-                result.emplace(unwrap_free<Key>(ctx, key), unwrap_free<Value>(ctx, value));
-                JS_FreeAtom(ctx, props[i].atom);
+                result.emplace(
+                    unwrap_free<Key>(ctx, JS_AtomToValue(ctx, list.props[i].atom)),
+                    unwrap_free<Value>(ctx, JS_GetProperty(ctx, v, list.props[i].atom)));
             }
 
             return result;
