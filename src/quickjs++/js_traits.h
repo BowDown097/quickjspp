@@ -566,7 +566,8 @@ namespace qjs
                 throw exception(ctx, JS_TYPE_ERROR, "js_traits<%s>::unwrap expects array", qjs_nameof<Range>());
 
             auto transform = [&](int64_t i) { return detail::unwrap_free<value_type>(ctx, JS_GetPropertyInt64(ctx, val, i)); };
-            return detail::make_from_range<Range>(std::views::iota(0LL, length) | std::views::transform(transform));
+            return detail::make_from_range<Range>(
+                std::views::iota(0LL, length) | std::views::transform(transform) | std::views::common);
         }
 
         static JSValue wrap(JSContext* ctx, const Range& val)
