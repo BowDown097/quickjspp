@@ -115,7 +115,7 @@ namespace qjs
         value(JSContext* ctx, T&& val)
             : ctx(ctx), v(js_traits<std::decay_t<T>>::wrap(ctx, std::forward<T>(val)))
         {
-            if (JS_IsException(v))
+            if (is_exception())
                 throw exception(ctx);
         }
 
@@ -125,7 +125,7 @@ namespace qjs
         value(JSContext* ctx, JSValue&& val)
             : ctx(ctx), v(std::move(val))
         {
-            if (JS_IsException(v))
+            if (is_exception())
                 throw exception(ctx);
         }
 
@@ -312,6 +312,36 @@ namespace qjs
                     std::forward<F>(callback), std::forward<Args>(args)...);
             }
         }
+
+        // type checking functions
+        bool is_number() const { return JS_IsNumber(v); }
+        bool is_bigint() const { return JS_IsBigInt(v); }
+        bool is_bool() const { return JS_IsBool(v); }
+        bool is_null() const { return JS_IsNull(v); }
+        bool is_undefined() const { return JS_IsUndefined(v); }
+        bool is_exception() const { return JS_IsException(v); }
+        bool is_uninitialized() const { return JS_IsUninitialized(v); }
+        bool is_string() const { return JS_IsString(v); }
+        bool is_symbol() const { return JS_IsSymbol(v); }
+        bool is_object() const { return JS_IsObject(v); }
+        bool is_module() const { return JS_IsModule(v); }
+        bool is_error() const { return JS_IsError(v); }
+        bool is_uncatchable_error() const { return JS_IsUncatchableError(v); }
+        bool is_function() const { return JS_IsFunction(ctx, v); }
+        bool is_async_function() const { return JS_IsAsyncFunction(v); }
+        bool is_constructor() const { return JS_IsConstructor(ctx, v); }
+        bool is_regexp() const { return JS_IsRegExp(v); }
+        bool is_map() const { return JS_IsMap(v); }
+        bool is_set() const { return JS_IsSet(v); }
+        bool is_weakref() const { return JS_IsWeakRef(v); }
+        bool is_weakset() const { return JS_IsWeakSet(v); }
+        bool is_weakmap() const { return JS_IsWeakMap(v); }
+        bool is_dataview() const { return JS_IsDataView(v); }
+        bool is_array() const { return JS_IsArray(v); }
+        bool is_proxy() const { return JS_IsProxy(v); }
+        bool is_date() const { return JS_IsDate(v); }
+        bool is_arraybuffer() const { return JS_IsArrayBuffer(v); }
+        bool is_promise() const { return JS_IsPromise(v); }
     private:
         template<typename R, typename F, typename... Args>
             requires std::is_void_v<R> || std::invocable<F, std::remove_reference_t<R>&&>
@@ -334,13 +364,13 @@ namespace qjs
                 JS_Throw(ctx, JS_PromiseResult(ctx, v));
                 throw exception(ctx);
             }
-            else if (JS_IsAsyncFunction(v))
+            else if (is_async_function())
             {
                 // async functions will return a pending promise that we can immediately handle
                 value promise = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
                 handle_pending_promise<R>(std::forward<F>(callback), ctx, promise.v);
             }
-            else if (JS_IsFunction(ctx, v))
+            else if (is_function())
             {
                 if constexpr (std::is_void_v<R>)
                 {
