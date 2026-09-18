@@ -31,6 +31,69 @@ template<typename T>
 
 namespace qjs
 {
+    template<typename T>
+    struct rest : std::vector<T>
+    {
+        using std::vector<T>::vector;
+        using std::vector<T>::operator=;
+    };
+
+    /** RAII wrapper for a JS runtime value. */
+    template<typename T, auto Dtor>
+        requires std::is_invocable_v<decltype(Dtor), JSContext*, T>
+    class scoped_value
+    {
+    public:
+        scoped_value(JSContext* ctx, T v) noexcept
+            : m_ctx(ctx), m_value(v) {}
+
+        scoped_value(scoped_value&& other) noexcept
+            : m_ctx(std::exchange(other.m_ctx, nullptr)),
+              m_value(other.m_value) {}
+
+        scoped_value(const scoped_value&) = delete;
+
+        ~scoped_value() noexcept
+        {
+            reset();
+        }
+
+        scoped_value& operator=(scoped_value&& other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                m_ctx = std::exchange(other.m_ctx, nullptr);
+                m_value = other.m_value;
+            }
+
+            return *this;
+        }
+
+        scoped_value& operator=(const scoped_value&) = delete;
+
+        T& get() & noexcept { return m_value; }
+        const T& get() const& noexcept { return m_value; }
+
+        explicit operator bool() const noexcept
+            requires std::is_pointer_v<T>
+        {
+            return m_ctx && m_value;
+        }
+    private:
+        void reset() noexcept
+        {
+            if (m_ctx)
+            {
+                Dtor(m_ctx, m_value);
+                m_ctx = nullptr;
+            }
+        }
+
+        JSContext* m_ctx;
+        T m_value;
+    };
+
     namespace detail
     {
         /** Type trait that evalutes to true if `T` is an instantiation of the class template `Primary`. */
@@ -103,44 +166,32 @@ namespace qjs
 
         /** Helper function to convert and then free JSValue. */
         template<typename T>
-        T unwrap_free(JSContext* ctx, JSValueConst val)
+        T unwrap_free(JSContext* ctx, JSValue val)
         {
-            if constexpr (std::is_void_v<T>)
-            {
-                JS_FreeValue(ctx, val);
-                return js_traits<std::decay_t<T>>::unwrap(ctx, val);
-            }
-            else
-            {
-                try
-                {
-                    T result = js_traits<std::decay_t<T>>::unwrap(ctx, val);
-                    JS_FreeValue(ctx, val);
-                    return result;
-                }
-                catch (...)
-                {
-                    JS_FreeValue(ctx, val);
-                    throw;
-                }
-            }
+            scoped_value<JSValue, JS_FreeValue> _val(ctx, val);
+            return js_traits<std::decay_t<T>>::unwrap(ctx, val);
         }
 
         /** Immutable view over a QuickJS string which frees the string on destruction. */
         class jsstring_view : public std::string_view
         {
         public:
-            jsstring_view(JSContext* ctx, const char* data, std::size_t len)
+            jsstring_view(JSContext* ctx, const char* data, std::size_t len) noexcept
                 : std::string_view(data, len), m_ctx(ctx) {}
-            jsstring_view(const jsstring_view&) = delete;
 
-            ~jsstring_view()
+            jsstring_view(jsstring_view&&) = default;
+            jsstring_view& operator=(jsstring_view&&) = default;
+
+            jsstring_view(const jsstring_view&) = delete;
+            jsstring_view& operator=(const jsstring_view&) = delete;
+
+            ~jsstring_view() noexcept
             {
                 if (m_ctx)
                     JS_FreeCString(m_ctx, data());
             }
 
-            operator const char*() const { return data(); }
+            operator const char*() const noexcept { return data(); }
         private:
             JSContext* m_ctx;
         };
@@ -165,13 +216,6 @@ namespace qjs
     {
         Function function{};
         const char* name{};
-    };
-
-    template<typename T>
-    struct rest : std::vector<T>
-    {
-        using std::vector<T>::vector;
-        using std::vector<T>::operator=;
     };
 
     /** Concept satisfied by any type that has a proper associated implementation of js_traits. */

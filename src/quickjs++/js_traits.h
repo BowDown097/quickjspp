@@ -519,9 +519,6 @@ namespace qjs
                 throw exception(ctx, JS_TYPE_ERROR, "Expected type %s", qjs_nameof<std::variant<Ts...>>());
         }
 
-        template<typename T, auto F>
-        struct scoped_val { JSContext* ctx; T v; ~scoped_val() { F(ctx, v); } };
-
         static std::optional<std::variant<Ts...>> unwrap_tagged(JSContext* ctx, JSValueConst val)
         {
             using unwrap_fn_t = std::variant<Ts...>(*)(JSContext*, JSValueConst);
@@ -534,21 +531,21 @@ namespace qjs
                 )...
             };
 
-            scoped_val<JSValue, JS_FreeValue> typeVal = { ctx, JS_GetPropertyStr(ctx, val, "$type") };
-            if (!JS_IsString(typeVal.v))
+            scoped_value<JSValue, JS_FreeValue> typeVal(ctx, JS_GetPropertyStr(ctx, val, "$type"));
+            if (!JS_IsString(typeVal.get()))
                 return std::nullopt;
 
-            scoped_val<const char*, JS_FreeCString> typeName = { ctx, JS_ToCString(ctx, typeVal.v) };
-            if (!typeName.v || typeName.v[0] == '\0')
+            scoped_value<const char*, JS_FreeCString> typeName(ctx, JS_ToCString(ctx, typeVal.get()));
+            if (!typeName || typeName.get()[0] == '\0')
                 return std::nullopt;
 
             for (const auto& [name, unwrapper] : entries)
-                if (strcmp(name, typeName.v) == 0)
+                if (strcmp(name, typeName.get()) == 0)
                     return unwrapper(ctx, val);
 
             throw exception(ctx, JS_TYPE_ERROR,
                 "Tagged type '%s' given, but was not found in %s",
-                typeName.v, qjs_nameof<std::variant<Ts...>>());
+                typeName.get(), qjs_nameof<std::variant<Ts...>>());
         }
     };
 
