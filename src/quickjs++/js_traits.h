@@ -148,6 +148,25 @@ namespace qjs
         }
     };
 
+    /** Conversion traits from std::u16string_view and to detail::jsu16string_view. */
+    template<>
+    struct js_traits<std::u16string_view>
+    {
+        static detail::jsu16string_view unwrap(JSContext* ctx, JSValueConst val)
+        {
+            std::size_t length;
+            if (const uint16_t* data = JS_ToCStringLenUTF16(ctx, &length, val))
+                return detail::jsu16string_view(ctx, data, length);
+            else
+                throw exception(ctx);
+        }
+
+        static JSValue wrap(JSContext* ctx, std::u16string_view val) noexcept
+        {
+            return JS_NewStringUTF16(ctx, reinterpret_cast<const uint16_t*>(val.data()), val.size());
+        }
+    };
+
     /** Conversion traits for std::string.
      *  Slower - prefer std::string_view trait whenever possible.
      */
@@ -166,6 +185,24 @@ namespace qjs
         }
     };
 
+    /** Conversion traits for std::u16string.
+     *  Slower - prefer std::u16string_view trait whenever possible.
+     */
+    template<>
+    struct js_traits<std::u16string>
+    {
+        static std::u16string unwrap(JSContext* ctx, JSValueConst val)
+        {
+            detail::jsu16string_view str = js_traits<std::u16string_view>::unwrap(ctx, val);
+            return std::u16string(str.data(), str.size());
+        }
+
+        static JSValue wrap(JSContext* ctx, const std::u16string& val) noexcept
+        {
+            return JS_NewStringUTF16(ctx, reinterpret_cast<const uint16_t*>(val.c_str()), val.size());
+        }
+    };
+
     /** Conversion traits for const char*. */
     template<>
     struct js_traits<const char*>
@@ -178,6 +215,23 @@ namespace qjs
         static JSValue wrap(JSContext* ctx, const char* val) noexcept
         {
             return JS_NewString(ctx, val);
+        }
+    };
+
+    /** Conversion traits for const char16_t*. */
+    template<>
+    struct js_traits<const char16_t*>
+    {
+        static detail::jsu16string_view unwrap(JSContext* ctx, JSValueConst val)
+        {
+            return js_traits<std::u16string_view>::unwrap(ctx, val);
+        }
+
+        static JSValue wrap(JSContext* ctx, const char16_t* val) noexcept
+        {
+            return JS_NewStringUTF16(ctx,
+                reinterpret_cast<const uint16_t*>(val),
+                std::char_traits<char16_t>::length(val));
         }
     };
 

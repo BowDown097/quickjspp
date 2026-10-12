@@ -173,28 +173,36 @@ namespace qjs
         }
 
         /** Immutable view over a QuickJS string which frees the string on destruction. */
-        class jsstring_view : public std::string_view
+        template<typename CharT, auto Dtor, typename DtorInT = CharT>
+        class jsbasic_string_view : public std::basic_string_view<CharT>
         {
         public:
-            jsstring_view(JSContext* ctx, const char* data, std::size_t len) noexcept
-                : std::string_view(data, len), m_ctx(ctx) {}
+            jsbasic_string_view(JSContext* ctx, const CharT* data, std::size_t len) noexcept
+                : std::basic_string_view<CharT>(data, len), m_ctx(ctx) {}
 
-            jsstring_view(jsstring_view&&) = default;
-            jsstring_view& operator=(jsstring_view&&) = default;
+            jsbasic_string_view(JSContext* ctx, const DtorInT* data, std::size_t len) noexcept
+                requires (!std::same_as<CharT, DtorInT>)
+                : std::basic_string_view<CharT>(reinterpret_cast<const CharT*>(data), len), m_ctx(ctx) {}
 
-            jsstring_view(const jsstring_view&) = delete;
-            jsstring_view& operator=(const jsstring_view&) = delete;
+            // copying disabled to prevent double free
+            jsbasic_string_view(jsbasic_string_view&&) = default;
+            jsbasic_string_view& operator=(jsbasic_string_view&&) = default;
+            jsbasic_string_view(const jsbasic_string_view&) = delete;
+            jsbasic_string_view& operator=(const jsbasic_string_view&) = delete;
 
-            ~jsstring_view() noexcept
+            ~jsbasic_string_view() noexcept
             {
                 if (m_ctx)
-                    JS_FreeCString(m_ctx, data());
+                    Dtor(m_ctx, reinterpret_cast<const DtorInT*>(this->data()));
             }
 
-            operator const char*() const noexcept { return data(); }
+            operator const CharT*() const noexcept { return this->data(); }
         private:
             JSContext* m_ctx;
         };
+
+        using jsstring_view = jsbasic_string_view<char, JS_FreeCString>;
+        using jsu16string_view = jsbasic_string_view<char16_t, JS_FreeCStringUTF16, uint16_t>;
     }
 
     /** A wrapper type for constructor of type T with arguments Args.
