@@ -325,12 +325,22 @@ namespace qjs
         class_registrar(const char* name, context& context, module* module = nullptr)
             : m_ctor(JS_NULL),
               m_context(context),
-              m_module(module),
               m_name(name),
+              m_parent(module),
               m_prototype(context.new_object()) {}
 
         explicit class_registrar(context& context, module* module = nullptr)
             : class_registrar(qjs_short_nameof<T>(), context, module) {}
+
+        class_registrar(const char* name, context& context, value parent)
+            : m_ctor(JS_NULL),
+              m_context(context),
+              m_name(name),
+              m_parent(std::move(parent)),
+              m_prototype(context.new_object()) {}
+
+        explicit class_registrar(context& context, value parent)
+            : class_registrar(qjs_short_nameof<T>(), context, std::move(parent)) {}
 
         class_registrar(const class_registrar&) = delete;
         class_registrar(class_registrar&&) = default;
@@ -372,8 +382,10 @@ namespace qjs
             m_ctor = m_context.new_value(ctor_wrapper<T, Args...> { name });
             JS_SetConstructor(m_context.ctx, m_ctor.v, m_prototype.v);
 
-            if (m_module)
-                m_module->add(name, value(m_ctor));
+            if (module** m = std::get_if<module*>(&m_parent); m && *m)
+                (*m)->add(name, value(m_ctor));
+            else if (value* v = std::get_if<value>(&m_parent))
+                (*v)[name] = value(m_ctor);
             else
                 m_context.global()[name] = value(m_ctor);
 
@@ -403,7 +415,7 @@ namespace qjs
         /** All qjs::Value members of T should be marked by mark<> for QuickJS garbage collector
          *  so that the cycle removal algorithm can find the other objects referenced by this object.
          */
-        template <value T::* V>
+        template <auto V> requires std::convertible_to<decltype(V), value T::*>
         class_registrar& mark()
         {
             js_traits<std::shared_ptr<T>>::mark_offsets.push_back(V);
@@ -456,8 +468,8 @@ namespace qjs
     private:
         value m_ctor;
         context& m_context;
-        module* m_module;
         const char* m_name;
+        std::variant<module*, value> m_parent;
         value m_prototype;
     };
 }

@@ -80,6 +80,12 @@ namespace qjs
         {
             return m_ctx && m_value;
         }
+
+        T release() noexcept
+        {
+            m_ctx = nullptr;
+            return m_value;
+        }
     private:
         void reset() noexcept
         {
