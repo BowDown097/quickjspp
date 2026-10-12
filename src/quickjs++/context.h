@@ -457,9 +457,13 @@ namespace qjs
          *  struct T { static int var; static int func(); }
          *  module.register_class<T>("T").constructor<>("T").static_member<&T::var>("var").static_member<&T::func>("func");
          */
-        template<auto M> requires std::is_pointer_v<decltype(M)>
+        template<auto M>
         class_registrar& static_member(const char* name = qjs_nameof_pointer<M>())
         {
+            // this is here because building fails on MSVC when this is a template constraint,
+            // even though this exact constraint is on qjs_nameof_pointer lol. MSVC is trash!
+            static_assert(std::is_pointer_v<decltype(M)>);
+
             assert(!JS_IsNull(m_ctor.v) && "You should call .constructor before .static_member");
             js_traits<std::shared_ptr<T>>::template ensure_can_cast_to_base<M>(m_context.ctx);
             m_ctor.add_member<M>(name);
