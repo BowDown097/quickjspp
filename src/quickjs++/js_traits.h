@@ -693,9 +693,8 @@ namespace qjs
         {
             if constexpr (sizeof...(Args) == 0)
             {
-                return [ctx, func_obj = JS_DupValue(ctx, val)]() -> R {
-                    JSValue result = JS_Call(ctx, func_obj, JS_UNDEFINED, 0, nullptr);
-                    JS_FreeValue(ctx, func_obj);
+                return [ctx, func_obj = scoped_value<JSValue, JS_FreeValue>(ctx, JS_DupValue(ctx, val))]() -> R {
+                    JSValue result = JS_Call(ctx, func_obj.get(), JS_UNDEFINED, 0, nullptr);
                     if (JS_IsException(result))
                         throw exception(ctx);
                     return detail::unwrap_free<R>(ctx, result);
@@ -703,11 +702,10 @@ namespace qjs
             }
             else
             {
-                return [ctx, func_obj = JS_DupValue(ctx, val)](Args... args) -> R {
+                return [ctx, func_obj = scoped_value<JSValue, JS_FreeValue>(ctx, JS_DupValue(ctx, val))](Args... args) -> R {
                     JSValue argv[sizeof...(Args)];
                     detail::wrap_args(ctx, argv, std::forward<decltype(args)>(args)...);
-                    JSValue result = JS_Call(ctx, func_obj, JS_UNDEFINED, sizeof...(Args), argv);
-                    JS_FreeValue(ctx, func_obj);
+                    JSValue result = JS_Call(ctx, func_obj.get(), JS_UNDEFINED, sizeof...(Args), argv);
                     for (std::size_t i = 0; i < sizeof...(Args); ++i) JS_FreeValue(ctx, argv[i]);
                     if (JS_IsException(result))
                         throw exception(ctx);

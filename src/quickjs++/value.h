@@ -319,6 +319,7 @@ namespace qjs
         bool is_bool() const { return JS_IsBool(v); }
         bool is_null() const { return JS_IsNull(v); }
         bool is_undefined() const { return JS_IsUndefined(v); }
+        bool is_nullish() const { return is_null() || is_undefined(); }
         bool is_exception() const { return JS_IsException(v); }
         bool is_uninitialized() const { return JS_IsUninitialized(v); }
         bool is_string() const { return JS_IsString(v); }
