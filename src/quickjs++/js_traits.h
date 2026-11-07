@@ -31,7 +31,7 @@ namespace qjs
         };
 
         template<typename Key, typename Value>
-        std::unordered_map<Key, Value> get_properties(JSContext* ctx, JSValueConst v)
+        std::vector<std::pair<Key, Value>> get_property_entries(JSContext* ctx, JSValueConst v)
         {
             if (!JS_IsObject(v))
                 throw exception(ctx, JS_TYPE_ERROR, "Value is not an object");
@@ -40,12 +40,12 @@ namespace qjs
             if (JS_GetOwnPropertyNames(ctx, &list.props, &list.length, v, JS_GPN_STRING_MASK) != 0)
                 throw exception(ctx, JS_INTERNAL_ERROR, "Could not get properties of value");
 
-            std::unordered_map<Key, Value> result;
+            std::vector<std::pair<Key, Value>> result;
             result.reserve(list.length);
 
             for (uint32_t i = 0; i < list.length; ++i)
             {
-                result.emplace(
+                result.emplace_back(
                     unwrap_free<Key>(ctx, JS_AtomToValue(ctx, list.props[i].atom)),
                     unwrap_free<Value>(ctx, JS_GetProperty(ctx, v, list.props[i].atom)));
             }
@@ -641,7 +641,8 @@ namespace qjs
 
         static Range unwrap(JSContext* ctx, JSValueConst val)
         {
-            return detail::make_from_range<Range>(detail::get_properties<key_type, mapped_type>(ctx, val));
+            return detail::make_from_range<Range>(
+                detail::get_property_entries<key_type, mapped_type>(ctx, val));
         }
 
         static JSValue wrap(JSContext* ctx, const Range& val)

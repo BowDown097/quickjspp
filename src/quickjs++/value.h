@@ -196,7 +196,14 @@ namespace qjs
         template<typename Key, typename Value>
         std::unordered_map<Key, Value> properties() const
         {
-            return detail::get_properties<Key, Value>(ctx, v);
+            return detail::make_from_range<std::unordered_map<Key, Value>>(
+                detail::get_property_entries<Key, Value>(ctx, v));
+        }
+
+        template<typename Key, typename Value>
+        std::vector<std::pair<Key, Value>> property_entries() const
+        {
+            return detail::get_property_entries<Key, Value>(ctx, v);
         }
 
         // add_getter_setter<&T::get_member, &T::set_member>("member");
