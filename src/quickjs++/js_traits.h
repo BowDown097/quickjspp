@@ -235,6 +235,21 @@ namespace qjs
         }
     };
 
+    /** Conversion traits for std::monostate. */
+    template<>
+    struct js_traits<std::monostate>
+    {
+        static std::monostate unwrap([[maybe_unused]] JSContext*, [[maybe_unused]] JSValueConst) noexcept
+        {
+            return {};
+        }
+
+        static JSValue wrap([[maybe_unused]] JSContext*, [[maybe_unused]] std::monostate) noexcept
+        {
+            return JS_NULL;
+        }
+    };
+
     /** Conversion traits for integers.
      *  Will be disabled for uint64_t if JS_NAN_BOXING is enabled, since JSValue becomes aliased to it.
      */
@@ -585,7 +600,7 @@ namespace qjs
                 )...
             };
 
-            scoped_value<JSValue, JS_FreeValue> typeVal(ctx, JS_GetPropertyStr(ctx, val, "$type"));
+            detail::scoped_jsvalue typeVal(ctx, JS_GetPropertyStr(ctx, val, "$type"));
             if (!JS_IsString(typeVal.get()))
                 return std::nullopt;
 
@@ -659,7 +674,34 @@ namespace qjs
         }
     };
 
-    /** Conversion traits for functions in fwrappers. */
+    /** Conversion traits for std::function. */
+    template<typename R, typename... Args>
+    struct js_traits<std::function<R(Args...)>>
+    {
+        static std::function<R(Args...)> unwrap(JSContext* ctx, JSValueConst val)
+        {
+            if (JS_IsNull(val) || JS_IsUndefined(val))
+                return {};
+
+            if (!JS_IsFunction(ctx, val))
+                throw exception(ctx, JS_TYPE_ERROR, "Expected a function or nullish value");
+
+            return [ctx, func_obj = std::make_shared<detail::scoped_jsvalue>(ctx, JS_DupValue(ctx, val))](Args... args) -> R {
+                detail::wrapped_args<Args...> argv(ctx, std::forward<Args>(args)...);
+                JSValue result = JS_Call(ctx, func_obj->get(), JS_UNDEFINED, argv.size(), argv.data());
+                if (JS_IsException(result))
+                    throw exception(ctx);
+                return detail::unwrap_free<R>(ctx, result);
+            };
+        }
+
+        static JSValue wrap(JSContext* ctx, std::function<R(Args...)>&& val)
+        {
+            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap std::function");
+        }
+    };
+
+    /** Conversion traits for fwrapper. */
     template<detail::any_invocable Function, bool PassThis>
     struct js_traits<fwrapper<Function, PassThis>>
     {
@@ -670,54 +712,8 @@ namespace qjs
 
         static JSValue wrap(JSContext* ctx, fwrapper<Function, PassThis> val) noexcept
         {
-            auto fptr = new std::decay_t<Function>(std::move(val.function));
-
-            JSCClosure* closure = [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv, int, void* opaque) {
-                if (auto function = static_cast<std::decay_t<Function>*>(opaque))
-                    return detail::wrap_call<PassThis>(ctx, *function, this_val, argc, argv);
-                return JS_NULL;
-            };
-
-            JSCClosureFinalizerFunc* finalizer = [](void* p) {
-                delete static_cast<std::decay_t<Function>*>(p);
-            };
-
-            return JS_NewCClosure(ctx, closure, val.name, finalizer, function_traits<Function>::arity, 0, fptr);
-        }
-    };
-
-    /** Conversion traits for std::function. */
-    template<typename R, typename... Args>
-    struct js_traits<std::function<R(Args...)>>
-    {
-        static auto unwrap(JSContext* ctx, JSValueConst val)
-        {
-            if constexpr (sizeof...(Args) == 0)
-            {
-                return [ctx, func_obj = scoped_value<JSValue, JS_FreeValue>(ctx, JS_DupValue(ctx, val))]() -> R {
-                    JSValue result = JS_Call(ctx, func_obj.get(), JS_UNDEFINED, 0, nullptr);
-                    if (JS_IsException(result))
-                        throw exception(ctx);
-                    return detail::unwrap_free<R>(ctx, result);
-                };
-            }
-            else
-            {
-                return [ctx, func_obj = scoped_value<JSValue, JS_FreeValue>(ctx, JS_DupValue(ctx, val))](Args... args) -> R {
-                    JSValue argv[sizeof...(Args)];
-                    detail::wrap_args(ctx, argv, std::forward<decltype(args)>(args)...);
-                    JSValue result = JS_Call(ctx, func_obj.get(), JS_UNDEFINED, sizeof...(Args), argv);
-                    for (std::size_t i = 0; i < sizeof...(Args); ++i) JS_FreeValue(ctx, argv[i]);
-                    if (JS_IsException(result))
-                        throw exception(ctx);
-                    return detail::unwrap_free<R>(ctx, result);
-                };
-            }
-        }
-
-        static JSValue wrap(JSContext* ctx, std::function<R(Args...)>&& val)
-        {
-            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap std::function");
+            return detail::make_functor_closure<Function, PassThis>(
+                std::move(val.function), ctx, val.name);
         }
     };
 
@@ -964,6 +960,7 @@ namespace qjs
             if (JS_IsException(jsobj))
                 return jsobj;
 
+            // empty deleter since we don't own val
             auto pptr = new std::shared_ptr<T>(val, [](T*) {});
             JS_SetOpaque(jsobj, pptr);
             return jsobj;

@@ -71,6 +71,12 @@ namespace qjs
             {
                 return as<value>().invoke_then(std::forward<F>(callback), std::forward<Args>(args)...);
             }
+
+            template<typename... Args>
+            void invoke(Args&&... args) const
+            {
+                return as<value>().invoke(std::forward<Args>(args)...);
+            }
         };
 
         /** Creates getters/setters for a class member variable to be used with the JavaScript runtime. */
@@ -320,6 +326,13 @@ namespace qjs
             }
         }
 
+        /** Basically invoke_then, but with no callback. */
+        template<typename... Args>
+        void invoke(Args&&... args) const
+        {
+            return invoke_then_impl<void>([] {}, std::forward<Args>(args)...);
+        }
+
         // type checking functions
         bool is_number() const { return JS_IsNumber(v); }
         bool is_bigint() const { return JS_IsBigInt(v); }
@@ -382,12 +395,12 @@ namespace qjs
             {
                 if constexpr (std::is_void_v<R>)
                 {
+                    as<std::function<void(Args...)>>()(std::forward<Args>(args)...);
                     callback();
                 }
                 else
                 {
-                    value result = as<std::function<value(Args...)>>()(std::forward<Args>(args)...);
-                    callback(result.as<R>());
+                    callback(as<std::function<R(Args...)>>()(std::forward<Args>(args)...));
                 }
             }
             else

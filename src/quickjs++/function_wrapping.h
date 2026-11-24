@@ -7,6 +7,42 @@ namespace qjs
 {
     namespace detail
     {
+        template<typename... Args>
+        class wrapped_args
+        {
+        public:
+            explicit wrapped_args(JSContext* ctx, Args&&... args) : m_storage(ctx)
+            {
+                (m_storage.add(std::forward<Args>(args)), ...);
+            }
+
+            JSValue* data() { return m_storage.size > 0 ? m_storage.data.data() : nullptr; }
+            std::size_t size() const { return m_storage.size; }
+        private:
+            struct storage
+            {
+                JSContext* ctx;
+                std::array<JSValue, sizeof...(Args)> data{};
+                std::size_t size{};
+
+                explicit storage(JSContext* ctx) : ctx(ctx) {}
+
+                ~storage()
+                {
+                    for (std::size_t i = 0; i < size; ++i)
+                        JS_FreeValue(ctx, data[i]);
+                }
+
+                template<typename T>
+                void add(T&& arg)
+                {
+                    using U = std::decay_t<T>;
+                    if constexpr (!std::is_same_v<U, JSContext*>)
+                        data[size++] = js_traits<U>::wrap(ctx, std::forward<T>(arg));
+                }
+            } m_storage;
+        };
+
         template <typename T, std::size_t I, std::size_t NArgs>
         struct unwrap_arg_impl
         {
@@ -137,17 +173,22 @@ namespace qjs
             }
         }
 
-        template <typename... Args>
-        void wrap_args(JSContext* ctx, JSValue* argv, Args&&... args)
+        template<typename Functor, bool PassThis>
+        JSValue make_functor_closure(Functor&& functor, JSContext* ctx, const char* name)
         {
-            std::size_t i = 0;
-            auto process = [&](auto&& arg) {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (!std::is_same_v<T, JSContext*>)
-                    argv[i++] = js_traits<T>::wrap(ctx, std::forward<decltype(arg)>(arg));
+            auto fptr = new std::decay_t<Functor>(std::forward<Functor>(functor));
+
+            JSCClosure* closure = [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv, int, void* opaque) {
+                if (auto func = static_cast<std::decay_t<Functor>*>(opaque))
+                    return detail::wrap_call<PassThis>(ctx, *func, this_val, argc, argv);
+                return JS_NULL;
             };
 
-            (process(std::forward<Args>(args)), ...);
+            JSCClosureFinalizerFunc* finalizer = [](void* p) {
+                delete static_cast<std::decay_t<Functor>*>(p);
+            };
+
+            return JS_NewCClosure(ctx, closure, name, finalizer, function_traits<Functor>::arity, 0, fptr);
         }
     }
 }

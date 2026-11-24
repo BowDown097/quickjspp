@@ -102,6 +102,9 @@ namespace qjs
 
     namespace detail
     {
+        /** Should only be used in place of qjs::value if you know what you're doing. */
+        using scoped_jsvalue = scoped_value<JSValue, JS_FreeValue>;
+
         /** Type trait that evalutes to true if `T` is an instantiation of the class template `Primary`. */
         template<class T, template<class...> class Primary>
         struct is_specialization_of : std::false_type {};
@@ -174,7 +177,7 @@ namespace qjs
         template<typename T>
         T unwrap_free(JSContext* ctx, JSValue val)
         {
-            scoped_value<JSValue, JS_FreeValue> _val(ctx, val);
+            scoped_jsvalue _val(ctx, val);
             return js_traits<std::decay_t<T>>::unwrap(ctx, val);
         }
 
@@ -232,17 +235,24 @@ namespace qjs
         const char* name{};
     };
 
+    /** Utility function to create a fwrapper. */
+    template<bool PassThis = false, detail::any_invocable Function>
+    auto make_fwrapper(Function&& function, const char* name)
+    {
+        return fwrapper<Function, PassThis> { std::forward<Function>(function), name };
+    }
+
     /** Concept satisfied by any type that has a proper associated implementation of js_traits. */
     template<typename T>
-    concept has_js_traits = requires(JSContext* ctx, JSValueConst val) {
-        { js_traits<T>::unwrap(ctx, val) } -> std::convertible_to<T>;
-        { js_traits<T>::wrap(ctx, std::declval<T>()) } -> std::same_as<JSValue>;
+    concept has_js_traits = requires(JSContext* ctx, T val, JSValueConst jsval) {
+        js_traits<T>::unwrap(ctx, jsval);
+        js_traits<T>::wrap(ctx, val);
     };
 
     /** Concept satisfied by any type that has a proper associated implementation of property_traits. */
     template<typename T>
-    concept has_property_traits = requires(JSContext* ctx, JSValue this_obj, JSValue val) {
-        { property_traits<T>::get(ctx, this_obj, std::declval<T>()) } -> std::same_as<JSValue>;
-        { property_traits<T>::set(ctx, this_obj, std::declval<T>(), val) } -> std::same_as<void>;
+    concept has_property_traits = requires(JSContext* ctx, JSValue this_obj, T val, JSValue jsval) {
+        { property_traits<T>::get(ctx, this_obj, val) } -> std::same_as<JSValue>;
+        { property_traits<T>::set(ctx, this_obj, val, jsval) } -> std::same_as<void>;
     };
 }
