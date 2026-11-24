@@ -370,7 +370,7 @@ namespace qjs
                 if constexpr (std::is_void_v<R>)
                     callback();
                 else
-                    callback(detail::unwrap_free<std::decay_t<R>>(ctx, JS_PromiseResult(ctx, v)));
+                    callback(detail::unwrap_free<std::remove_cvref_t<R>>(ctx, JS_PromiseResult(ctx, v)));
             }
             else if (promiseState == JS_PROMISE_REJECTED)
             {
@@ -385,14 +385,15 @@ namespace qjs
             }
             else if (is_function())
             {
+                using func_type = std::function<std::remove_cvref_t<R>(Args...)>;
                 if constexpr (std::is_void_v<R>)
                 {
-                    as<std::function<void(Args...)>>()(std::forward<Args>(args)...);
+                    as<func_type>()(std::forward<Args>(args)...);
                     callback();
                 }
                 else
                 {
-                    callback(as<std::function<R(Args...)>>()(std::forward<Args>(args)...));
+                    callback(as<func_type>()(std::forward<Args>(args)...));
                 }
             }
             else
@@ -412,7 +413,7 @@ namespace qjs
                     if constexpr (std::is_void_v<R>)
                         (*cb)();
                     else
-                        (*cb)(js_traits<std::decay_t<R>>::unwrap(ctx, argv[0]));
+                        (*cb)(js_traits<std::remove_cvref_t<R>>::unwrap(ctx, argv[0]));
                 }
                 return JS_NULL;
             };
