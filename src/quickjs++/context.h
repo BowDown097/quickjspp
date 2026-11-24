@@ -157,13 +157,10 @@ namespace qjs
 
         module& add(const char* name, JSValue&& value);
 
-        template<typename T> requires (has_js_traits<T> || detail::any_invocable<T>)
+        template<has_js_traits T>
         module& add(const char* name, T&& value)
         {
-            if constexpr (detail::any_invocable<T>)
-                return add(name, js_traits<fwrapper<T>>::wrap(m_ctx, { std::forward<T>(value), name }));
-            else
-                return add(name, js_traits<T>::wrap(m_ctx, std::forward<T>(value)));
+            return add(name, js_traits<T>::wrap(m_ctx, std::forward<T>(value)));
         }
 
     #ifdef __cpp_impl_reflection
@@ -403,12 +400,27 @@ namespace qjs
         }
 
         /** Add free function. */
-        template<typename F>
+        template<bool OperateAsMember = false, typename F>
             requires (std::is_function_v<std::remove_pointer_t<F>> ||
                       requires { &std::remove_reference_t<F>::operator(); })
         class_registrar& function(F&& f, const char* name)
         {
-            m_prototype[name] = std::forward<F>(f);
+            if constexpr (OperateAsMember)
+            {
+                return function(fwrapper<F, true> { std::forward<F>(f), name });
+            }
+            else
+            {
+                m_prototype[name] = std::forward<F>(f);
+                return *this;
+            }
+        }
+
+        /** Add wrapped function. */
+        template<detail::any_invocable Function, bool PassThis>
+        class_registrar& function(fwrapper<Function, PassThis> f)
+        {
+            m_prototype[f.name] = std::move(f);
             return *this;
         }
 

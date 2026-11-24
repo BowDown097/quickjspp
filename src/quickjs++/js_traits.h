@@ -674,6 +674,24 @@ namespace qjs
         }
     };
 
+    /** Conversion traits for general functions. */
+    template<detail::any_invocable Function>
+    struct js_traits<Function>
+    {
+        using stdfunc_type = std::function<typename function_traits<Function>::function_type>;
+
+        static stdfunc_type unwrap(JSContext* ctx, JSValueConst val)
+        {
+            return js_traits<stdfunc_type>::unwrap(ctx, val);
+        }
+
+        template<typename Functor>
+        static JSValue wrap(JSContext* ctx, Functor&& functor)
+        {
+            return js_traits<stdfunc_type>::wrap(ctx, std::forward<Functor>(functor));
+        }
+    };
+
     /** Conversion traits for std::function. */
     template<typename R, typename... Args>
     struct js_traits<std::function<R(Args...)>>
@@ -695,9 +713,11 @@ namespace qjs
             };
         }
 
-        static JSValue wrap(JSContext* ctx, std::function<R(Args...)>&& val)
+        template<typename Functor> requires std::is_invocable_r_v<R, Functor, Args...>
+        static JSValue wrap(JSContext* ctx, Functor&& functor)
         {
-            throw exception(ctx, JS_TYPE_ERROR, "Can't wrap std::function");
+            return detail::make_functor_closure<Functor, false>(
+                std::forward<Functor>(functor), ctx, qjs_nameof<R(Args...)>());
         }
     };
 
@@ -786,9 +806,28 @@ namespace qjs
         /// Mapping between derived class' JSClassID and function to obtain the std::shared_ptr from the JSValue.
         inline static std::unordered_map<JSClassID, ptr_cast_fcn_t> ptr_cast_fcn_map;
 
+        /** Check if the type has been assigned a class ID. */
         static bool is_registered()
         {
             return qjs_class_id != 0;
+        }
+
+        /** Check if the type has been registered with the given runtime. */
+        static bool is_registered(JSRuntime* rt)
+        {
+            return is_registered() && JS_IsRegisteredClass(rt, qjs_class_id);
+        }
+
+        /** Check if the type has a prototype in the given context. */
+        static bool is_registered(JSContext* ctx)
+        {
+            if (!is_registered(JS_GetRuntime(ctx)))
+                return false;
+
+            JSValue proto = JS_GetClassProto(ctx, qjs_class_id);
+            bool has_proto = !JS_IsUndefined(proto);
+            JS_FreeValue(ctx, proto);
+            return has_proto;
         }
 
         /** Register a class as a derived class.
@@ -863,7 +902,7 @@ namespace qjs
             if (!is_registered())
                 JS_NewClassID(rt, &qjs_class_id);
 
-            if (!JS_IsRegisteredClass(rt, qjs_class_id))
+            if (!is_registered(rt))
             {
                 JSClassGCMark* marker{};
                 if (!mark_offsets.empty())

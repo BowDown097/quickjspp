@@ -31,14 +31,6 @@ namespace qjs
                 return *this;
             }
 
-            template<detail::any_invocable F> requires std::same_as<Key, const char*>
-            property_proxy& operator=(F&& f)
-            {
-                property_traits<Key>::set(ctx, this_obj, key,
-                    js_traits<fwrapper<F>>::wrap(ctx, fwrapper<F> { std::forward<F>(f), key }));
-                return *this;
-            }
-
             // ensure C strings are decayed with overload
             property_proxy& operator=(const char* s)
             {
