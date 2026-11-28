@@ -51,6 +51,12 @@ namespace qjs
                 return as<value>().template properties<Key2, Value>();
             }
 
+            template<typename Key2, typename Value>
+            std::vector<std::pair<Key2, Value>> property_entries() const
+            {
+                return as<value>().template property_entries<Key2, Value>();
+            }
+
             std::string to_json() const { return as<value>().to_json(); }
             std::string to_json(const value& replacer) const { return as<value>().to_json(replacer); }
             std::string to_json(const value& replacer, const value& space) const { return as<value>().to_json(replacer, space); }
