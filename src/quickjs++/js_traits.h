@@ -52,6 +52,63 @@ namespace qjs
 
             return result;
         }
+
+        template<typename T>
+        static T unwrap_tuple(JSContext* ctx, JSValueConst val)
+        {
+            int64_t length;
+            if (JS_GetLength(ctx, val, &length) != 0)
+            {
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "js_traits<%s>::unwrap expects array", qjs_nameof<T>());
+            }
+            if (length != std::tuple_size_v<T>)
+            {
+                throw exception(ctx, JS_TYPE_ERROR,
+                    "js_traits<%s>::unwrap expected array of length %zu, got %" PRId64,
+                    qjs_nameof<T>(), std::tuple_size_v<T>, length);
+            }
+
+            return [&]<std::size_t... I>(std::index_sequence<I...>) {
+                return T {
+                    unwrap_free<std::tuple_element_t<I, T>>(
+                        ctx, JS_GetPropertyUint32(ctx, val, I)
+                    )...
+                };
+            }(std::make_index_sequence<std::tuple_size_v<T>>{});
+        }
+
+        template<typename T>
+        static JSValue wrap_tuple(JSContext* ctx, const T& val) noexcept
+        {
+            try
+            {
+                JSValue result = JS_NewArray(ctx);
+                [&]<std::size_t... I>(std::index_sequence<I...>) {
+                    (JS_SetPropertyUint32(
+                        ctx, result, I,
+                        js_traits<std::tuple_element_t<I, T>>::wrap(
+                            ctx, std::get<I>(val)
+                        )
+                    ), ...);
+                }(std::make_index_sequence<std::tuple_size_v<T>>{});
+                return result;
+            }
+            catch (const exception&)
+            {
+                return JS_EXCEPTION;
+            }
+            catch (const std::exception& ex)
+            {
+                JS_ThrowInternalError(ctx, "%s", ex.what());
+                return JS_EXCEPTION;
+            }
+            catch (...)
+            {
+                JS_ThrowInternalError(ctx, "Unknown error");
+                return JS_EXCEPTION;
+            }
+        }
     }
 
     /** JavaScript conversion traits. Describes how to convert type T to/from JSValue. */
@@ -342,47 +399,27 @@ namespace qjs
     {
         static std::pair<U, V> unwrap(JSContext* ctx, JSValueConst val)
         {
-            int64_t length;
-            if (JS_GetLength(ctx, val, &length) != 0)
-            {
-                throw exception(ctx, JS_TYPE_ERROR,
-                    "js_traits<%s>::unwrap expects array", qjs_nameof<std::pair<U, V>>());
-            }
-            if (length != 2)
-            {
-                throw exception(ctx, JS_TYPE_ERROR,
-                    "js_traits<%s>::unwrap expected array of length 2, got %" PRId64,
-                    qjs_nameof<std::pair<U, V>>(), length);
-            }
-
-            return std::make_pair(
-                detail::unwrap_free<U>(ctx, JS_GetPropertyUint32(ctx, val, 0)),
-                detail::unwrap_free<V>(ctx, JS_GetPropertyUint32(ctx, val, 1)));
+            return detail::unwrap_tuple<std::pair<U, V>>(ctx, val);
         }
 
         static JSValue wrap(JSContext* ctx, const std::pair<U, V>& val) noexcept
         {
-            try
-            {
-                JSValue result = JS_NewArray(ctx);
-                JS_SetPropertyUint32(ctx, result, 0, js_traits<U>::wrap(ctx, val.first));
-                JS_SetPropertyUint32(ctx, result, 1, js_traits<V>::wrap(ctx, val.second));
-                return result;
-            }
-            catch (const exception&)
-            {
-                return JS_EXCEPTION;
-            }
-            catch (const std::exception& ex)
-            {
-                JS_ThrowInternalError(ctx, "%s", ex.what());
-                return JS_EXCEPTION;
-            }
-            catch (...)
-            {
-                JS_ThrowInternalError(ctx, "Unknown error");
-                return JS_EXCEPTION;
-            }
+            return detail::wrap_tuple(ctx, val);
+        }
+    };
+
+    /** Conversion traits for std::tuple. */
+    template<typename... Ts>
+    struct js_traits<std::tuple<Ts...>>
+    {
+        static std::tuple<Ts...> unwrap(JSContext* ctx, JSValueConst val)
+        {
+            return detail::unwrap_tuple<std::tuple<Ts...>>(ctx, val);
+        }
+
+        static JSValue wrap(JSContext* ctx, const std::tuple<Ts...>& val) noexcept
+        {
+            return detail::wrap_tuple(ctx, val);
         }
     };
 
